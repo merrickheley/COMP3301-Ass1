@@ -28,9 +28,13 @@ C_FLAGS = -Wall -ansi -pedantic
 C_FILES = main.c
 OBJS := $(C_FILES:.c=.o)
 
+# Documentation
+DOC_CONFIG = Doxyfile
+DOC_FOLDER = docs
+
 # Distribution
 DIST_NAME = $(AUTHOR).tar.gz
-DIST_FILES = $(C_FILES) $(LICENSE) Makefile
+DIST_FILES = $(SRC_FOLDER) $(LICENSE) Makefile $(DOC_FOLDER)
 
 all: install
 
@@ -40,11 +44,14 @@ install: $(OBJS)
 %.o: %.c
 	$(CC) $(C_FLAGS) -c $<
 
-clean:
-	@rm -f *.o *.gch $(PROGRAM)
+docs:
+	doxygen $(DOC_CONFIG)
+
+dist: docs
+	tar -cvf $(DIST_NAME) $(DIST_FILES) $(C_FILES)
 	
-dist:
-	tar -cvf $(DIST_NAME) $(DIST_FILES)
+clean:
+	@rm -rf $(OBJS) $(PROGRAM) $(DOC_FOLDER)
 
 #Do not add OBJS, if the files exist do not rebuild them
-.PHONY: all install clean dist
+.PHONY: all install clean dist docs

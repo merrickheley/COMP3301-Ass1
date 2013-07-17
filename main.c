@@ -1,5 +1,13 @@
-/*  qshell
- *  COMP3301 Assignment 1
+/**
+ *  \file main.c
+ *  \author Merrick Heley (merrick.heley@uqconnect.edu.au)
+ *  \brief Simple shell replacement
+ *
+ *  \details
+ *
+ *  qshell is a simple shell written in C.
+ *
+ *  COMP3301 Assignment 1 \n
  *  Copyright (C) 2013  Merrick Heley
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -14,6 +22,8 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http: *www.gnu.org/licenses/>.
+ *
+
  */
 
 #include <stdio.h>
