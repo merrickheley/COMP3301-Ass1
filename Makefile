@@ -1,6 +1,5 @@
-# Si-Shell
-# Version 0.0
-#
+# qshell
+# COMP3301 Assignment 1
 # Copyright (C) 2013  Merrick Heley
 #
 # This program is free software: you can redistribute it and/or modify
@@ -16,10 +15,33 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-all:
+# Program options
+PROGRAM = qshell
+AUTHOR = 42339915
+LICENSE = gpl.txt
 
-install:
+# Compiler options
+CC = gcc
+C_FLAGS = -Wall -ansi -pedantic
+
+# Files to compile
+C_FILES = main.c
+OBJS := $(C_FILES:.c=.o)
+
+# Distribution
+DIST_NAME = $(AUTHOR).tar.gz
+DIST_FILES = $(C_FILES) $(LICENSE) Makefile
+
+all: install
+
+install: $(OBJS)
+	$(CC) $(C_FLAGS) $(OBJS) -o $(PROGRAM)
+
+%.o: %.c
+	$(CC) $(C_FLAGS) -c $<
 
 clean:
-
+	@rm -f *.o *.gch $(PROGRAM)
+	
 dist:
+	tar -cvf $(DIST_NAME) $(DIST_FILES)
