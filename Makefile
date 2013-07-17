@@ -45,3 +45,6 @@ clean:
 	
 dist:
 	tar -cvf $(DIST_NAME) $(DIST_FILES)
+
+#Do not add OBJS, if the files exist do not rebuild them
+.PHONY: all install clean dist
