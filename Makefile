@@ -34,7 +34,7 @@ DOC_FOLDER = docs
 
 # Distribution
 DIST_NAME = $(AUTHOR).tar.gz
-DIST_FILES = $(SRC_FOLDER) $(LICENSE) Makefile $(DOC_FOLDER)
+DIST_FILES = $(SRC_FOLDER) $(LICENSE) Makefile $(C_FILES)
 
 all: install
 
@@ -47,11 +47,11 @@ install: $(OBJS)
 docs:
 	doxygen $(DOC_CONFIG)
 
-dist: docs
-	tar -cvf $(DIST_NAME) $(DIST_FILES) $(C_FILES)
+dist:
+	tar -cvf $(DIST_NAME) $(DIST_FILES)
 	
 clean:
-	@rm -rf $(OBJS) $(PROGRAM) $(DOC_FOLDER)
+	@rm -rf $(OBJS) $(PROGRAM) $(DOC_FOLDER) $(DIST_NAME)
 
 #Do not add OBJS, if the files exist do not rebuild them
 .PHONY: all install clean dist docs
