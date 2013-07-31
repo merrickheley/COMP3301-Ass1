@@ -91,8 +91,12 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        pid = fork();
-        if (pid < 0)
+        if (strncmp(buf, "exit", 4) == 0) {
+            exit(0);
+        }
+
+
+        if ((pid = fork()) < 0)
             printf("fork error");
 
         /* child */
