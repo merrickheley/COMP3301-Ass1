@@ -32,16 +32,36 @@
 #define MAXCHARS 150
 
 #define ERR_SUCCESS 0
-#define ERR_CWD 1
+#define ERR_GET_CWD 1
+#define ERR_SET_CWD 2
+
+#define ERR_CHILD   127
+
+/**
+ * gets the current working directory
+ */
+void read_cwd(char *cwd) {
+    if (getcwd(cwd, MAXCHARS) == NULL) {
+        perror("getcwd() error");
+        exit(ERR_GET_CWD);
+    }
+}
+
+/**
+ * changes the current working directory
+ */
+void set_cwd(char *cwd) {
+    if (chdir(cwd) < 0) {
+        perror("chdir() error");
+        exit(ERR_SET_CWD);
+    }
+}
 
 /**
  * prints the prompt to the user for a command
  */
 void print_prompt(char *cwd) {
-    if (getcwd(cwd, MAXCHARS) == NULL) {
-        perror("getcwd() error");
-        exit(ERR_CWD);
-    }
+    read_cwd(cwd);
 
     printf("%s? ", cwd);
 }
@@ -63,20 +83,27 @@ int main(int argc, char **argv) {
         /* replace newline with null */
         buf[strlen(buf) - 1] = 0;
 
-        pid = fork();
-        if (pid < 0) {
-            printf("fork error");
+        /* this needs to be done more robustly */
+        if (strncmp(buf, "cd", 2) == 0) {
+            set_cwd(buf+3);
+
+            print_prompt(cwd);
+            continue;
         }
+
+        pid = fork();
+        if (pid < 0)
+            printf("fork error");
+
         /* child */
         else if (pid == 0) {
             execlp(buf, buf, (char *) 0);
             printf("couldn't execute: %s \r\n", buf);
-            return (127);
+            return (ERR_CHILD);
         }
         /* parent */
-        if ((pid = waitpid(pid, &status, 0)) < 0) {
+        if ((pid = waitpid(pid, &status, 0)) < 0)
             printf("waitpid error");
-        }
 
         /* print prompt */
         print_prompt(cwd);
