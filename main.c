@@ -33,10 +33,12 @@
 #define FALSE       0
 
 #define MAXCHARS    150
+#define ARR_END     (char *) 0
 
 #define ERR_EOF     0
 #define ERR_GET_CWD 1
 #define ERR_SET_CWD 2
+#define ERR_HOME    3
 
 #define ERR_CHILD   127
 
@@ -52,8 +54,15 @@ void read_cwd(char *cwd) {
 
 /**
  * changes the current working directory
+ * If no directory is specified, change to home
  */
 void set_cwd(char *cwd) {
+    if (cwd == ARR_END)
+        if ((cwd = getenv("HOME")) == NULL) {
+            printf("Failed to read HOME variable\r\n");
+            exit(ERR_HOME);
+        }
+
     if (chdir(cwd) < 0) {
         perror("chdir() error");
         exit(ERR_SET_CWD);
@@ -94,7 +103,7 @@ int split_string(char *buf, char **args) {
         }
     }
 
-    args[j] = (char *) 0;
+    args[j] = ARR_END;
 
     return j;
 }
