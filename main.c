@@ -34,7 +34,7 @@
 
 #define MAXCHARS    150
 
-#define ERR_SUCCESS 0
+#define ERR_EOF     0
 #define ERR_GET_CWD 1
 #define ERR_SET_CWD 2
 
@@ -109,35 +109,38 @@ int main(int argc, char **argv) {
     pid_t pid;
     int status;
 
-    /* print initial prompt */
-    print_prompt(cwd);
+    while (TRUE) {
+        /* print prompt */
+        print_prompt(cwd);
 
-    while (fgets(buf, MAXCHARS, stdin) != NULL) {
+        /* get user input */
+        if (fgets(buf, MAXCHARS, stdin) == NULL) {
+            exit(ERR_EOF);
+        }
 
         /* replace newline with null */
         buf[strlen(buf) - 1] = 0;
 
-        /* If empty line, print prompt and do nothing */
+        /* if empty line, continue */
         if (strlen(buf) == 0) {
-            print_prompt(cwd);
             continue;
         }
 
         /* Split the string into args */
         split_string(buf, bufargs);
 
-        /* this needs to be done more robustly */
+        /*  cd command*/
         if (strncmp(bufargs[0], "cd", 2) == 0) {
             set_cwd(bufargs[1]);
-
-            print_prompt(cwd);
             continue;
         }
 
+        /* exit command */
         if (strncmp(bufargs[0], "exit", 4) == 0) {
-            exit(0);
+            exit(ERR_EOF);
         }
 
+        /* fork and run the command on path */
         if ((pid = fork()) < 0)
             printf("fork error");
 
@@ -151,10 +154,7 @@ int main(int argc, char **argv) {
         /* parent */
         if ((pid = waitpid(pid, &status, 0)) < 0)
             printf("waitpid error");
-
-        /* print prompt */
-        print_prompt(cwd);
     }
 
-    return (ERR_SUCCESS);
+    return (ERR_EOF);
 }
