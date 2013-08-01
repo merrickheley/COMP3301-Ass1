@@ -94,6 +94,8 @@ int split_string(char *buf, char **args) {
         }
     }
 
+    args[j] = (char *) 0;
+
     return j;
 }
 
@@ -103,7 +105,7 @@ int split_string(char *buf, char **args) {
 int main(int argc, char **argv) {
     char buf[MAXCHARS];
     char cwd[MAXCHARS];
-    char *args[22];
+    char *bufargs[25];
     pid_t pid;
     int status;
 
@@ -115,27 +117,33 @@ int main(int argc, char **argv) {
         /* replace newline with null */
         buf[strlen(buf) - 1] = 0;
 
-        split_string(buf, args);
+        /* If empty line, print prompt and do nothing */
+        if (strlen(buf) == 0) {
+            print_prompt(cwd);
+            continue;
+        }
+
+        /* Split the string into args */
+        split_string(buf, bufargs);
 
         /* this needs to be done more robustly */
-        if (strncmp(buf, "cd", 2) == 0) {
-            set_cwd(buf+3);
+        if (strncmp(bufargs[0], "cd", 2) == 0) {
+            set_cwd(bufargs[1]);
 
             print_prompt(cwd);
             continue;
         }
 
-        if (strncmp(buf, "exit", 4) == 0) {
+        if (strncmp(bufargs[0], "exit", 4) == 0) {
             exit(0);
         }
-
 
         if ((pid = fork()) < 0)
             printf("fork error");
 
         /* child */
         else if (pid == 0) {
-            execlp(buf, buf, (char *) 0);
+            execvp(bufargs[0], bufargs);
             printf("couldn't execute: %s \r\n", buf);
             return (ERR_CHILD);
         }
