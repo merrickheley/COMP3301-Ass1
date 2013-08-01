@@ -29,7 +29,10 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-#define MAXCHARS 150
+#define TRUE        1
+#define FALSE       0
+
+#define MAXCHARS    150
 
 #define ERR_SUCCESS 0
 #define ERR_GET_CWD 1
@@ -67,11 +70,40 @@ void print_prompt(char *cwd) {
 }
 
 /**
+ * splits a string into an array of its arguments
+ * return: number of arguments
+ */
+int split_string(char *buf, char **args) {
+    int buflen = strlen(buf);
+    int i, j;
+    int lastspace = TRUE;
+
+    j = 0;
+    /** loop over each char */
+    for (i = 0; i < buflen; i++) {
+        /* Swap spaces to null chars */
+        if (buf[i] == ' ') {
+            buf[i] = '\0';
+            lastspace = TRUE;
+        }
+        /* If the last char was a space, an argument starts here */
+        else if (lastspace == TRUE) {
+            lastspace = FALSE;
+            args[j] = &buf[i];
+            j++;
+        }
+    }
+
+    return j;
+}
+
+/**
  * main execution loop
  */
 int main(int argc, char **argv) {
     char buf[MAXCHARS];
     char cwd[MAXCHARS];
+    char *args[22];
     pid_t pid;
     int status;
 
@@ -82,6 +114,8 @@ int main(int argc, char **argv) {
 
         /* replace newline with null */
         buf[strlen(buf) - 1] = 0;
+
+        split_string(buf, args);
 
         /* this needs to be done more robustly */
         if (strncmp(buf, "cd", 2) == 0) {
@@ -105,6 +139,7 @@ int main(int argc, char **argv) {
             printf("couldn't execute: %s \r\n", buf);
             return (ERR_CHILD);
         }
+
         /* parent */
         if ((pid = waitpid(pid, &status, 0)) < 0)
             printf("waitpid error");
