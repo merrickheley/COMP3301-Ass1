@@ -32,7 +32,7 @@
 #define TRUE        1
 #define FALSE       0
 
-#define MAXCHARS    150
+#define MAXCHARS    128
 #define ARR_END     (char *) 0
 
 #define ERR_EOF     0
@@ -57,12 +57,14 @@ void read_cwd(char *cwd) {
  * If no directory is specified, change to home
  */
 void set_cwd(char *cwd) {
+    /* if cwd not set, get it from the home variable */
     if (cwd == ARR_END)
         if ((cwd = getenv("HOME")) == NULL) {
-            printf("Failed to read HOME variable\r\n");
+            fprintf(stdout, "Failed to read HOME variable\r\n");
             exit(ERR_HOME);
         }
 
+    /* cd to the new dir */
     if (chdir(cwd) < 0) {
         perror("chdir() error");
         exit(ERR_SET_CWD);
@@ -75,7 +77,8 @@ void set_cwd(char *cwd) {
 void print_prompt(char *cwd) {
     read_cwd(cwd);
 
-    printf("%s? ", cwd);
+    fprintf(stdout, "%s? ", cwd);
+    fflush(stdout);
 }
 
 /**
@@ -108,31 +111,63 @@ int split_string(char *buf, char **args) {
     return j;
 }
 
+/* Get an entire line of text */
+int get_line(int input, char *buffer) {
+
+    int count;
+    char c[2];
+
+    buffer = (char *) realloc(buffer, sizeof(char));
+    count = 0;
+
+    /* Run while there are still characters to get */
+    while (read(input, c, 1) > 0) {
+
+        /* If the string is done, set the buffer */
+        if (c[0] == '\n' || c[0] == '\0') {
+            return count + 1;
+        } else {
+            /* Reallocate the buffer and increase its size by 1 */
+            buffer = (char*) realloc(buffer,
+                    (size_t) sizeof(char) *(count+2) );
+
+            /* Assign the character read to the buffer */
+            c[1] = '\0';
+            memcpy(buffer+count, c, 2);
+
+        }
+        count++;
+    }
+
+    return 0;
+}
+
 /**
  * main execution loop
  */
 int main(int argc, char **argv) {
-    char buf[MAXCHARS];
+    char *buf;
+    int lineLen;
     char cwd[MAXCHARS];
     char *bufargs[25];
     pid_t pid;
     int status;
 
+    buf = malloc(sizeof(char));
+
     while (TRUE) {
+
         /* print prompt */
         print_prompt(cwd);
 
-        /* get user input */
-        if (fgets(buf, MAXCHARS, stdin) == NULL) {
+        for (status=0; status<100000000; status++);
+
+        /* get line */
+        lineLen = get_line(STDIN_FILENO, buf);
+
+        /* Check if EOF (no chars in buffer) */
+        if (lineLen == 0) {
             exit(ERR_EOF);
-        }
-
-        /* replace newline with null */
-        buf[strlen(buf) - 1] = 0;
-
-        /* if empty line, continue */
-        if (strlen(buf) == 0) {
-            continue;
         }
 
         /* Split the string into args */
@@ -151,18 +186,18 @@ int main(int argc, char **argv) {
 
         /* fork and run the command on path */
         if ((pid = fork()) < 0)
-            printf("fork error");
+            fprintf(stdout, "fork error");
 
         /* child */
         else if (pid == 0) {
             execvp(bufargs[0], bufargs);
-            printf("couldn't execute: %s \r\n", buf);
+            fprintf(stdout, "couldn't execute: %s \r\n", buf);
             return (ERR_CHILD);
         }
 
         /* parent */
         if ((pid = waitpid(pid, &status, 0)) < 0)
-            printf("waitpid error");
+            fprintf(stdout, "waitpid error");
     }
 
     return (ERR_EOF);
