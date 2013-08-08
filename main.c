@@ -160,8 +160,6 @@ int main(int argc, char **argv) {
         /* print prompt */
         print_prompt(cwd);
 
-        for (status=0; status<100000000; status++);
-
         /* get line */
         lineLen = get_line(STDIN_FILENO, buf);
 
