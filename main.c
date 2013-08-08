@@ -202,6 +202,11 @@ int main(int argc, char **argv) {
             continue;
         }
 
+        /* buffer is a comment */
+        if (buf[0] == '#') {
+            continue;
+        }
+
         /* Split the string into args */
         split_string(buf, bufargs);
 
