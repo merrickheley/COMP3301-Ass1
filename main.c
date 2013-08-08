@@ -22,9 +22,12 @@
  *  along with this program.  If not, see <http: *www.gnu.org/licenses/>.
  */
 
+#define _POSIX_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -41,6 +44,8 @@
 #define ERR_HOME    3
 
 #define ERR_CHILD   127
+
+pid_t childPid;
 
 /**
  * gets the current working directory
@@ -142,6 +147,16 @@ int get_line(int input, char *buffer) {
     return 0;
 }
 
+/* handler for SIGINT */
+void sigint_recieved(int s) {
+
+    /* If child exists, kill it. */
+    if (childPid) {
+        kill(childPid, SIGINT);
+        /* waitpid(childPid, NULL, 0); */
+    }
+}
+
 /**
  * main execution loop
  */
@@ -150,10 +165,12 @@ int main(int argc, char **argv) {
     int lineLen;
     char cwd[MAXCHARS];
     char *bufargs[25];
-    pid_t pid;
     int status;
 
     buf = malloc(sizeof(char));
+
+    /* Handle SIGINT signals */
+    signal(SIGINT, sigint_recieved);
 
     while (TRUE) {
 
@@ -183,19 +200,19 @@ int main(int argc, char **argv) {
         }
 
         /* fork and run the command on path */
-        if ((pid = fork()) < 0)
+        if ((childPid = fork()) < 0)
             fprintf(stdout, "fork error");
 
         /* child */
-        else if (pid == 0) {
+        else if (childPid == 0) {
             execvp(bufargs[0], bufargs);
             fprintf(stdout, "couldn't execute: %s \r\n", buf);
             return (ERR_CHILD);
         }
 
         /* parent */
-        if ((pid = waitpid(pid, &status, 0)) < 0)
-            fprintf(stdout, "waitpid error");
+        if ((childPid = waitpid(childPid, &status, 0)) < 0)
+            fprintf(stdout, "waitpid error: %d\r\n", childPid);
     }
 
     return (ERR_EOF);
