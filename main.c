@@ -46,6 +46,7 @@
 #define ERR_CHILD   127
 
 pid_t childPid;
+char cwd[MAXCHARS];
 
 /**
  * gets the current working directory
@@ -156,9 +157,11 @@ void sigint_recieved(int s) {
         kill(childPid, SIGINT);
     }
 
-    printf("pid: %d\r\n", childPid);
+    fprintf(stdout, "\r\n");
 
-    signal(SIGINT, sigint_recieved);
+    if (!childPid){
+        print_prompt(cwd);
+    }
 }
 
 /**
@@ -167,14 +170,16 @@ void sigint_recieved(int s) {
 int main(int argc, char **argv) {
     char *buf;
     int lineLen;
-    char cwd[MAXCHARS];
     char *bufargs[25];
     int status;
+    struct sigaction sa;
 
     buf = malloc(sizeof(char));
 
     /* Handle SIGINT signals */
-    signal(SIGINT, sigint_recieved);
+    sa.sa_handler = sigint_recieved;
+    sa.sa_flags = 0x10000000;       /* SA_RESTART */
+    sigaction(SIGINT, &sa, 0);
 
     while (TRUE) {
         /* Clear the child Pid */
