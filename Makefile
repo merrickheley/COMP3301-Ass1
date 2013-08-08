@@ -22,7 +22,7 @@ LICENSE = gpl.txt
 
 # Compiler options
 CC = gcc
-C_FLAGS = -Wall -ansi -pedantic
+C_FLAGS = -Wall -ansi -pedantic -g
 
 # Files to compile
 C_FILES = main.c
