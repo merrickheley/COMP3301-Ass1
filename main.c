@@ -120,13 +120,14 @@ int split_string(char *buf, char **args) {
 int get_line(int input, char *buffer) {
 
     int count;
+    int ret;
     char c[2];
 
     buffer = (char *) realloc(buffer, sizeof(char));
     count = 0;
 
     /* Run while there are still characters to get */
-    while (read(input, c, 1) > 0) {
+    while ((ret=read(input, c, 1)) > 0) {
 
         /* If the string is done, set the buffer */
         if (c[0] == '\n' || c[0] == '\0') {
@@ -144,17 +145,20 @@ int get_line(int input, char *buffer) {
         count++;
     }
 
-    return 0;
+    return ret;
 }
 
 /* handler for SIGINT */
 void sigint_recieved(int s) {
 
     /* If child exists, kill it. */
-    if (childPid) {
+    if (childPid && s == SIGINT) {
         kill(childPid, SIGINT);
-        /* waitpid(childPid, NULL, 0); */
     }
+
+    printf("pid: %d\r\n", childPid);
+
+    signal(SIGINT, sigint_recieved);
 }
 
 /**
@@ -173,6 +177,8 @@ int main(int argc, char **argv) {
     signal(SIGINT, sigint_recieved);
 
     while (TRUE) {
+        /* Clear the child Pid */
+        childPid = 0;
 
         /* print prompt */
         print_prompt(cwd);
@@ -183,6 +189,12 @@ int main(int argc, char **argv) {
         /* Check if EOF (no chars in buffer) */
         if (lineLen == 0) {
             exit(ERR_EOF);
+        }
+
+        /* Check if error in reading line */
+        if (lineLen < 0) {
+            printf("\r\n");
+            continue;
         }
 
         /* Split the string into args */
@@ -211,8 +223,8 @@ int main(int argc, char **argv) {
         }
 
         /* parent */
-        if ((childPid = waitpid(childPid, &status, 0)) < 0)
-            fprintf(stdout, "waitpid error: %d\r\n", childPid);
+        if (waitpid(childPid, &status, 0) < 0)
+            perror("waitpid err");
     }
 
     return (ERR_EOF);
