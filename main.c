@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <linux/limits.h>
 
 #define TRUE        1
 #define FALSE       0
@@ -38,21 +39,35 @@
 #define MAXCHARS    128
 #define ARR_END     (char *) 0
 
+#define READ_END    0
+#define WRITE_END   1
+
 #define ERR_EOF     0
 #define ERR_GET_CWD 1
 #define ERR_SET_CWD 2
 #define ERR_HOME    3
+#define ERR_FORK    4
+#define ERR_PIPE    5
+#define ERR_WAIT    6
 
 #define ERR_CHILD   127
 
+#define NUMCMDS     2
+#define NUMARGS     25
+
 pid_t childPid;
-char cwd[MAXCHARS];
+char cwd[PATH_MAX];
+
+typedef struct {
+    char *args[NUMARGS];
+    pid_t pid;
+} CmdStruct;
 
 /**
  * gets the current working directory
  */
 void read_cwd(char *cwd) {
-    if (getcwd(cwd, MAXCHARS) == NULL) {
+    if (getcwd(cwd, PATH_MAX) == NULL) {
         perror("getcwd() error");
         exit(ERR_GET_CWD);
     }
@@ -79,42 +94,15 @@ void set_cwd(char *cwd) {
 
 /**
  * prints the prompt to the user for a command
+ * Check if any background tasks finished
  */
 void print_prompt(char *cwd) {
+    /* Handle any background tasks */
+
     read_cwd(cwd);
 
     fprintf(stdout, "%s? ", cwd);
     fflush(stdout);
-}
-
-/**
- * splits a string into an array of its arguments
- * return: number of arguments
- */
-int split_string(char *buf, char **args) {
-    int buflen = strlen(buf);
-    int i, j;
-    int lastspace = TRUE;
-
-    j = 0;
-    /** loop over each char */
-    for (i = 0; i < buflen; i++) {
-        /* Swap spaces to null chars */
-        if (buf[i] == ' ') {
-            buf[i] = '\0';
-            lastspace = TRUE;
-        }
-        /* If the last char was a space, an argument starts here */
-        else if (lastspace == TRUE) {
-            lastspace = FALSE;
-            args[j] = &buf[i];
-            j++;
-        }
-    }
-
-    args[j] = ARR_END;
-
-    return j;
 }
 
 /* Get an entire line of text */
@@ -149,6 +137,120 @@ int get_line(int input, char *buffer) {
     return ret;
 }
 
+/**
+ * splits a string into an array of its arguments
+ * return: number of arguments
+ */
+int split_string(char *buf, char **args) {
+    int buflen = strlen(buf);
+    int i, j;
+    int lastspace = TRUE;
+
+    j = 0;
+    /** loop over each char */
+    for (i = 0; i < buflen; i++) {
+        /* Swap spaces to null chars */
+        if (buf[i] == ' ') {
+            buf[i] = '\0';
+            lastspace = TRUE;
+        }
+        /* If the last char was a space, an argument starts here */
+        else if (lastspace == TRUE) {
+            lastspace = FALSE;
+            args[j] = &buf[i];
+            j++;
+        }
+    }
+
+    args[j] = ARR_END;
+
+    return j;
+}
+
+void process_buf(char **args) {
+    int status;
+    int i = 0;
+    int j = 0;
+    int numCmds = 0;
+    CmdStruct cmd[NUMCMDS];
+    int fd[2] = { 0 };
+
+    /*  cd command*/
+    if (strncmp(args[0], "cd", 2) == 0) {
+        set_cwd(args[1]);
+        return;
+    }
+
+    /* exit command */
+    if (strncmp(args[0], "exit", 4) == 0) {
+        exit(ERR_EOF);
+    }
+
+    /* Split the single command into separate commands */
+    /* Set up a pipe between them if necessary */
+    /* Store them in a cmd struct */
+    for (i = 0; args[i] != ARR_END; i++) {
+        if (strcmp(args[i], "|") == 0) {
+            cmd[numCmds].args[j] = ARR_END;
+
+            if (pipe(fd) == -1) {
+                perror("pipe");
+                exit(ERR_PIPE);
+            }
+
+            j=0;
+            numCmds++;
+        } else {
+            cmd[numCmds].args[j] = args[i];
+            j++;
+        }
+    }
+    cmd[numCmds].args[j] = ARR_END;
+
+    for (i = 0; i<=numCmds; i++) {
+
+        /* fork and run the command on path */
+        if ((childPid = fork()) < 0) {
+            fprintf(stdout, "fork error");
+            exit(ERR_FORK);
+        }
+
+        /* child */
+        else if (childPid == 0) {
+
+            if (i==0 && numCmds > 0) {
+                close(fd[READ_END]);
+                dup2(fd[WRITE_END], STDOUT_FILENO);
+            } else if (i == 1 && numCmds > 0) {
+                close(fd[WRITE_END]);
+                dup2(fd[READ_END], STDIN_FILENO);
+            }
+
+            execvp(cmd[i].args[0], cmd[i].args);
+            fprintf(stdout, "couldn't execute: %s \r\n", args[0]);
+            exit(ERR_CHILD);
+        }
+
+        /* parent */
+        cmd[i].pid = childPid;
+    }
+
+    /* Clean each fork */
+    for (i = 0; i<=numCmds; i++) {
+
+        if (wait(&status) < 0) {
+            perror("wait err");
+            exit(ERR_WAIT);
+        }
+    }
+
+    /* clean out fd */
+    if (numCmds > 0) {
+        close(fd[READ_END]);
+        close(fd[WRITE_END]);
+    }
+}
+
 /* handler for SIGINT */
 void sigint_recieved(int s) {
 
@@ -170,8 +272,8 @@ void sigint_recieved(int s) {
 int main(int argc, char **argv) {
     char *buf;
     int lineLen;
-    char *bufargs[25];
-    int status;
+    char *bufargs[NUMARGS];
+
     struct sigaction sa;
 
     buf = malloc(sizeof(char));
@@ -202,7 +304,7 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        /* buffer is a comment */
+        /* command is a comment */
         if (buf[0] == '#') {
             continue;
         }
@@ -210,31 +312,8 @@ int main(int argc, char **argv) {
         /* Split the string into args */
         split_string(buf, bufargs);
 
-        /*  cd command*/
-        if (strncmp(bufargs[0], "cd", 2) == 0) {
-            set_cwd(bufargs[1]);
-            continue;
-        }
-
-        /* exit command */
-        if (strncmp(bufargs[0], "exit", 4) == 0) {
-            exit(ERR_EOF);
-        }
-
-        /* fork and run the command on path */
-        if ((childPid = fork()) < 0)
-            fprintf(stdout, "fork error");
-
-        /* child */
-        else if (childPid == 0) {
-            execvp(bufargs[0], bufargs);
-            fprintf(stdout, "couldn't execute: %s \r\n", buf);
-            return (ERR_CHILD);
-        }
-
-        /* parent */
-        if (waitpid(childPid, &status, 0) < 0)
-            perror("waitpid err");
+        /* Process the args */
+        process_buf(bufargs);
     }
 
     return (ERR_EOF);
