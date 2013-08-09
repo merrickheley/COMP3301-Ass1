@@ -44,9 +44,6 @@ install: $(OBJS)
 %.o: %.c
 	$(CC) $(C_FLAGS) -c $<
 
-docs:
-	doxygen $(DOC_CONFIG)
-
 dist:
 	tar -cvf $(DIST_NAME) $(DIST_FILES)
 	
