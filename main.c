@@ -33,45 +33,22 @@
 #include <sys/wait.h>
 #include <linux/limits.h>
 
+#include "errs.h"
+
 #define TRUE        1
 #define FALSE       0
 
-#define MAXCHARS    128
 #define ARR_END     (char *) 0
 
 #define READ_END    0
 #define WRITE_END   1
 
-#define ERR_EOF     0
-#define ERR_GET_CWD 1
-#define ERR_SET_CWD 2
-#define ERR_HOME    3
-#define ERR_FORK    4
-#define ERR_PIPE    5
-#define ERR_WAIT    6
-
-#define ERR_CHILD   127
-
-#define NUMCMDS     2
-#define NUMARGS     25
-
-pid_t childPid;
-char cwd[PATH_MAX];
-
 typedef struct {
-    char *args[NUMARGS];
-    pid_t pid;
-} CmdStruct;
-
-/**
- * gets the current working directory
- */
-void read_cwd(char *cwd) {
-    if (getcwd(cwd, PATH_MAX) == NULL) {
-        perror("getcwd() error");
-        exit(ERR_GET_CWD);
-    }
-}
+    pid_t pid;          /* Pid of process (0 = completed, else Pid) */
+    int argc;           /* Number of arguments */
+    char **argsv;       /* Arguments */
+    int running;        /* Running status (0 = stopped, 1 = running) */
+} Process;
 
 /**
  * changes the current working directory
@@ -96,13 +73,21 @@ void set_cwd(char *cwd) {
  * prints the prompt to the user for a command
  * Check if any background tasks finished
  */
-void print_prompt(char *cwd) {
+void print_prompt() {
     /* Handle any background tasks */
 
-    read_cwd(cwd);
+    char *cwd;
+
+    /* change this to a CWD that is malloced */
+    if ((cwd = getcwd(NULL, 0)) == NULL) {
+        perror("getcwd() error");
+        exit(ERR_GET_CWD);
+    }
 
     fprintf(stdout, "%s? ", cwd);
     fflush(stdout);
+
+    free(cwd);
 }
 
 /* Get an entire line of text */
@@ -141,12 +126,13 @@ int get_line(int input, char *buffer) {
  * splits a string into an array of its arguments
  * return: number of arguments
  */
-int split_string(char *buf, char **args) {
+char **split_string(char *buf) {
     int buflen = strlen(buf);
-    int i, j;
+    int i;
+    int j = 0;
     int lastspace = TRUE;
+    char **args = (char **) malloc((j+1) * sizeof(char *));
 
-    j = 0;
     /** loop over each char */
     for (i = 0; i < buflen; i++) {
         /* Swap spaces to null chars */
@@ -159,102 +145,58 @@ int split_string(char *buf, char **args) {
             lastspace = FALSE;
             args[j] = &buf[i];
             j++;
+
+            args = (char **) realloc(args, (j+1) * sizeof(char *));
         }
     }
 
     args[j] = ARR_END;
 
-    return j;
+    return args;
 }
 
-void process_buf(char **args) {
+void process_buf(char **bufargs) {
+    Process proc;
     int status;
-    int i = 0;
-    int j = 0;
-    int numCmds = 0;
-    CmdStruct cmd[NUMCMDS];
-    int fd[2] = { 0 };
+
+    proc.running = 0;
 
     /*  cd command*/
-    if (strncmp(args[0], "cd", 2) == 0) {
-        set_cwd(args[1]);
+    if (strncmp(bufargs[0], "cd", 2) == 0) {
+        set_cwd(bufargs[1]);
         return;
     }
 
     /* exit command */
-    if (strncmp(args[0], "exit", 4) == 0) {
+    if (strncmp(bufargs[0], "exit", 4) == 0) {
         exit(ERR_EOF);
     }
 
-    /* Split the single command into separate commands */
-    /* Set up a pipe between them if necessary */
-    /* Store them in a cmd struct */
-    for (i = 0; args[i] != ARR_END; i++) {
-        if (strcmp(args[i], "|") == 0) {
-            cmd[numCmds].args[j] = ARR_END;
+    /* Split bufargs into process args */
 
-            if (pipe(fd) == -1) {
-                perror("pipe");
-                exit(ERR_PIPE);
-            }
 
-            j=0;
-            numCmds++;
-        } else {
-            cmd[numCmds].args[j] = args[i];
-            j++;
-        }
-    }
-    cmd[numCmds].args[j] = ARR_END;
+    /* fork and run the command on path */
+   if ((proc.pid = fork()) < 0)
+       fprintf(stdout, "fork error");
 
-    for (i = 0; i<=numCmds; i++) {
+   /* child */
+   else if (proc.pid == 0) {
+       execvp(bufargs[0], bufargs);
+       fprintf(stdout, "couldn't execute: %s \r\n", bufargs[0]);
+       exit (ERR_CHILD);
+   }
 
-        /* fork and run the command on path */
-        if ((childPid = fork()) < 0) {
-            fprintf(stdout, "fork error");
-            exit(ERR_FORK);
-        }
+   /* parent */
+   if (waitpid(proc.pid, &status, 0) < 0)
+       perror("waitpid err");
 
-        /* child */
-        else if (childPid == 0) {
 
-            if (i==0 && numCmds > 0) {
-                close(fd[READ_END]);
-                dup2(fd[WRITE_END], STDOUT_FILENO);
-            } else if (i == 1 && numCmds > 0) {
-                close(fd[WRITE_END]);
-                dup2(fd[READ_END], STDIN_FILENO);
-            }
-
-            execvp(cmd[i].args[0], cmd[i].args);
-            fprintf(stdout, "couldn't execute: %s \r\n", args[0]);
-            exit(ERR_CHILD);
-        }
-
-        /* parent */
-        cmd[i].pid = childPid;
-    }
-
-    /* Clean each fork */
-    for (i = 0; i<=numCmds; i++) {
-
-        if (wait(&status) < 0) {
-            perror("wait err");
-            exit(ERR_WAIT);
-        }
-    }
-
-    /* clean out fd */
-    if (numCmds > 0) {
-        close(fd[READ_END]);
-        close(fd[WRITE_END]);
-    }
 }
 
 /* handler for SIGINT */
-void sigint_recieved(int s) {
+/*void sigint_recieved(int s) {
 
-    /* If child exists, kill it. */
+     If child exists, kill it.
     if (childPid && s == SIGINT) {
         kill(childPid, SIGINT);
     }
@@ -262,59 +204,67 @@ void sigint_recieved(int s) {
     fprintf(stdout, "\r\n");
 
     if (!childPid){
-        print_prompt(cwd);
+        print_prompt();
     }
-}
+}*/
 
 /**
  * main execution loop
  */
 int main(int argc, char **argv) {
-    char *buf;
-    int lineLen;
-    char *bufargs[NUMARGS];
+    char *buf;                      /* Input buffer */
+    int lineLen;                    /* Length of buffer */
+    char **bufargs;                 /* malloc, may cause segfaults */
 
     struct sigaction sa;
 
-    buf = malloc(sizeof(char));
+    buf = (char *) malloc(sizeof(char));
 
     /* Handle SIGINT signals */
-    sa.sa_handler = sigint_recieved;
-    sa.sa_flags = 0x10000000;       /* SA_RESTART */
-    sigaction(SIGINT, &sa, 0);
+    /*sa.sa_handler = sigint_recieved;
+    sa.sa_flags = 0x10000000;        SA_RESTART
+    sigaction(SIGINT, &sa, 0);*/
 
     while (TRUE) {
-        /* Clear the child Pid */
-        childPid = 0;
 
         /* print prompt */
-        print_prompt(cwd);
+        print_prompt();
 
         /* get line */
         lineLen = get_line(STDIN_FILENO, buf);
 
         /* Check if EOF (no chars in buffer) */
         if (lineLen == 0) {
-            exit(ERR_EOF);
+            break;
         }
 
         /* Check if error in reading line */
         if (lineLen < 0) {
-            printf("\r\n");
+            fprintf(stdout, "\r\n");
             continue;
         }
 
-        /* command is a comment */
+        /* command is a comment, do not process */
         if (buf[0] == '#') {
             continue;
         }
 
         /* Split the string into args */
-        split_string(buf, bufargs);
+        bufargs = split_string(buf);
 
         /* Process the args */
         process_buf(bufargs);
+
+        /* free bufargs */
+        free(bufargs);
+
     }
+
+    /* free buffer */
+    free(buf);
+
+    /* Print a newline to finish the prompt */
+    fprintf(stdout, "\r\n");
 
     return (ERR_EOF);
 }
