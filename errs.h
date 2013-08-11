@@ -25,14 +25,19 @@
 #ifndef ERRS_H_
 #define ERRS_H_
 
-#define ERR_EOF         0
-#define ERR_GET_CWD     1
-#define ERR_SET_CWD     2
-#define ERR_HOME        3
-#define ERR_FORK        4
-#define ERR_PIPE        5
-#define ERR_WAIT        6
+/* system errors */
+#define ERR_EOF                             0
+#define ERR_GET_CWD                         1
+#define ERR_SET_CWD                         2
+#define ERR_HOME                            3
+#define ERR_FORK                            4
+#define ERR_PIPE                            5
+#define ERR_WAIT                            6
 
-#define ERR_CHILD       127
+/* Debug errrors */
+#define ERR_FREE_RUNNING_PROC               100
+
+/* Child errors */
+#define ERR_CHILD                           200
 
 #endif /* ERRS_H_ */

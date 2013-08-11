@@ -35,20 +35,105 @@
 
 #include "errs.h"
 
-#define TRUE        1
-#define FALSE       0
+#define TRUE            1
+#define FALSE           0
 
-#define ARR_END     (char *) 0
+#define ARR_END         (char *) 0
 
-#define READ_END    0
-#define WRITE_END   1
+#define READ_END        0
+#define WRITE_END       1
 
-typedef struct {
-    pid_t pid;          /* Pid of process (0 = completed, else Pid) */
-    int argc;           /* Number of arguments */
-    char **argsv;       /* Arguments */
-    int running;        /* Running status (0 = stopped, 1 = running) */
-} Process;
+#define PROC_STOPPED    0
+#define PROC_RUNNING    1
+
+/**
+ * Structure to hold a single process, can be linked (piped) to others
+ */
+struct Process {
+    pid_t pid;              /* Pid of process */
+    char **argsv;           /* Arguments */
+    int running;            /* Running status (0 = stopped, 1 = running) */
+    int status;             /* waitpid status */
+    struct Process *next;   /* Next process to pipe data into */
+    int stdin;              /* Stdin for process */
+    int stdout;             /* Stdout for process */
+};
+
+/**
+ * Structure to hold a command. Contains the head of the process
+ */
+struct Command {
+    struct Process *procHead;
+    struct Command *next;
+};
+
+/* Global foreground command */
+struct Command *fgCmd;
+/* Global background commands */
+struct Command *bgCmds;
+
+/**
+ * Initialise a process with default values
+ */
+struct Process *init_process() {
+    struct Process * proc = (struct Process *) malloc(sizeof(struct Process));
+
+    proc->pid = -1;
+    proc->argsv = NULL;
+    proc->running = 0;
+    proc->next = NULL;
+    proc->stdin = STDIN_FILENO;
+    proc->stdout = STDOUT_FILENO;
+
+    return proc;
+}
+
+/**
+ * Free a process and linked processes in the list
+ */
+void free_process(struct Process *proc) {
+
+    if (proc->next != NULL) {
+        free_process(proc->next);
+    }
+
+    if (proc->running) {
+        exit(ERR_FREE_RUNNING_PROC);
+    }
+    free(proc);
+}
+
+/**
+ * Initialise a command with default values
+ */
+struct Command *init_command() {
+    struct Command *cmd = (struct Command *) malloc(sizeof(struct Command));
+
+    cmd->procHead = NULL;
+    cmd->next = NULL;
+
+    return cmd;
+}
+/**
+ * Free a command and it's processes, and make the head
+ */
+void free_command(struct Command *head, struct Command *cmd) {
+    struct Command *ptr = head;
+
+    free_process(cmd->procHead);
+
+    /* find the current commands pointer */
+    while (ptr->next != cmd || ptr->next == NULL) {
+        ptr = ptr->next;
+    }
+
+    /* if there is a pointer to this command, make it skip this command */
+    if (ptr->next != NULL) {
+        ptr->next = cmd->next;
+    }
+
+    free(cmd);
+}
 
 /**
  * changes the current working directory
@@ -155,11 +240,12 @@ char **split_string(char *buf) {
     return args;
 }
 
+/**
+ * Process the buffer arguments
+ */
 void process_buf(char **bufargs) {
-    Process proc;
-    int status;
-
-    proc.running = 0;
+    struct Command *cmd;
+    struct Process *proc;
 
     /*  cd command*/
     if (strncmp(bufargs[0], "cd", 2) == 0) {
@@ -172,41 +258,53 @@ void process_buf(char **bufargs) {
         exit(ERR_EOF);
     }
 
-    /* Split bufargs into process args */
+    /* Set up command and first process */
+    cmd = init_command();
+    proc = init_process();
 
+    /* Set the head of the current cmd to the process */
+    cmd->procHead = proc;
+
+    /* Split bufargs into process args */
+    proc->argsv = bufargs;
+
+    /* Process is now running */
+    proc->running = PROC_RUNNING;
+    fgCmd = cmd;
 
     /* fork and run the command on path */
-   if ((proc.pid = fork()) < 0)
+   if ((proc->pid = fork()) < 0)
        fprintf(stdout, "fork error");
 
    /* child */
-   else if (proc.pid == 0) {
-       execvp(bufargs[0], bufargs);
-       fprintf(stdout, "couldn't execute: %s \r\n", bufargs[0]);
+   else if (proc->pid == 0) {
+       execvp(proc->argsv[0], proc->argsv);
+       fprintf(stdout, "couldn't execute: %s \r\n", proc->argsv[0]);
        exit (ERR_CHILD);
    }
 
-   /* parent */
-   if (waitpid(proc.pid, &status, 0) < 0)
+   /* parent, wait on child */
+   if (waitpid(proc->pid, &proc->pid, 0) < 0)
        perror("waitpid err");
 
+   /* Process has been stopped */
+   proc->running = PROC_STOPPED;
 
+   fgCmd = NULL;
 }
 
 /* handler for SIGINT */
-/*void sigint_recieved(int s) {
-
-     If child exists, kill it.
-    if (childPid && s == SIGINT) {
-        kill(childPid, SIGINT);
-    }
+void sigint_recieved(int s) {
 
     fprintf(stdout, "\r\n");
 
-    if (!childPid){
+    /* If child exists, kill it, otherwise reprint the prompt */
+    if (fgCmd != NULL && fgCmd->procHead->running == PROC_RUNNING) {
+        kill(fgCmd->procHead->pid, SIGINT);
+    } else {
         print_prompt();
     }
-}*/
+}
 
 /**
  * main execution loop
@@ -215,15 +313,19 @@ int main(int argc, char **argv) {
     char *buf;                      /* Input buffer */
     int lineLen;                    /* Length of buffer */
     char **bufargs;                 /* malloc, may cause segfaults */
-
     struct sigaction sa;
 
+    /* set up buffer */
     buf = (char *) malloc(sizeof(char));
 
+    /* set up fg and bg cmds */
+    fgCmd = NULL;
+    bgCmds = NULL;
+
     /* Handle SIGINT signals */
-    /*sa.sa_handler = sigint_recieved;
-    sa.sa_flags = 0x10000000;        SA_RESTART
-    sigaction(SIGINT, &sa, 0);*/
+    sa.sa_handler = sigint_recieved;
+    sa.sa_flags = 0x10000000;        /* SA_RESTART, not available in ANSI */
+    sigaction(SIGINT, &sa, 0);
 
     while (TRUE) {
 
