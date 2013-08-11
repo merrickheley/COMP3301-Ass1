@@ -33,6 +33,9 @@
 #define ERR_FORK                            4
 #define ERR_PIPE                            5
 #define ERR_WAIT                            6
+#define ERR_DUP2                            7
+#define ERR_CLOSE                           8
+#define ERR_READ                            9
 
 /* Debug errrors */
 #define ERR_FREE_RUNNING_PROC               100

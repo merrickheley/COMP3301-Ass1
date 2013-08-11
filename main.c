@@ -55,8 +55,8 @@ struct Process {
     int running;            /* Running status (0 = stopped, 1 = running) */
     int status;             /* waitpid status */
     struct Process *next;   /* Next process to pipe data into */
-    int stdin;              /* Stdin for process */
-    int stdout;             /* Stdout for process */
+    int fdin;               /* Stdin for process */
+    int fdout;              /* Stdout for process */
 };
 
 /**
@@ -75,15 +75,15 @@ struct Command *bgCmds;
 /**
  * Initialise a process with default values
  */
-struct Process *init_process() {
+struct Process *init_process(size_t argSize) {
     struct Process * proc = (struct Process *) malloc(sizeof(struct Process));
 
     proc->pid = -1;
-    proc->argsv = NULL;
+    proc->argsv = (char **) malloc(argSize);
     proc->running = 0;
     proc->next = NULL;
-    proc->stdin = STDIN_FILENO;
-    proc->stdout = STDOUT_FILENO;
+    proc->fdin = STDIN_FILENO;
+    proc->fdout = STDOUT_FILENO;
 
     return proc;
 }
@@ -100,6 +100,8 @@ void free_process(struct Process *proc) {
     if (proc->running) {
         exit(ERR_FREE_RUNNING_PROC);
     }
+
+    free(proc->argsv);
     free(proc);
 }
 
@@ -246,49 +248,144 @@ char **split_string(char *buf) {
 void process_buf(char **bufargs) {
     struct Command *cmd;
     struct Process *proc;
+    int i;
+    int j;
+    int argc = 0;
+    int fd[2];
+
+    printf("gotcha %s\r\n", bufargs[1]);
 
     /*  cd command*/
-    if (strncmp(bufargs[0], "cd", 2) == 0) {
+    if (strcmp(bufargs[0], "cd") == 0 && bufargs[0][2] == '\0') {
         set_cwd(bufargs[1]);
         return;
     }
 
     /* exit command */
-    if (strncmp(bufargs[0], "exit", 4) == 0) {
+    if (strcmp(bufargs[0], "exit") == 0 && bufargs[0][4] == '\0') {
         exit(ERR_EOF);
     }
 
+    /* Get argc */
+    while (bufargs[argc++] != ARR_END);
+
     /* Set up command and first process */
     cmd = init_command();
-    proc = init_process();
+    proc = init_process(argc * sizeof(char *));
 
     /* Set the head of the current cmd to the process */
     cmd->procHead = proc;
 
     /* Split bufargs into process args */
-    proc->argsv = bufargs;
+    i = 0;
+    j = 0;
+    while (bufargs[i] != ARR_END) {
 
-    /* Process is now running */
-    proc->running = PROC_RUNNING;
+        if (bufargs[i][0] == '|' && bufargs[i][1] == '\0') {
+            /* pipe between processes */
+
+            proc->argsv[j+1] = ARR_END;
+            proc->next = init_process(argc * sizeof(char *));
+
+            if (pipe(fd) < 0) {
+                perror("pipe failed");
+                exit(ERR_PIPE);
+            }
+
+            proc->fdout = fd[WRITE_END];
+            proc->next->fdin = fd[READ_END];
+
+            proc = proc->next;
+            j = 0;
+        } else {
+            /* copy buffer across to process */
+
+            proc->argsv[j] = bufargs[i];
+            j++;
+        }
+
+        i++;
+    }
+    proc->argsv[j] = ARR_END;
+
+    /* reset proc back to start */
+    proc = cmd->procHead;
+
+    /* set the foreground command to the current command */
     fgCmd = cmd;
 
-    /* fork and run the command on path */
-   if ((proc->pid = fork()) < 0)
-       fprintf(stdout, "fork error");
+    while (TRUE) {
 
-   /* child */
-   else if (proc->pid == 0) {
-       execvp(proc->argsv[0], proc->argsv);
-       fprintf(stdout, "couldn't execute: %s \r\n", proc->argsv[0]);
-       exit (ERR_CHILD);
-   }
+        /* Process is now running */
+        proc->running = PROC_RUNNING;
 
-   /* parent, wait on child */
-   if (waitpid(proc->pid, &proc->pid, 0) < 0)
-       perror("waitpid err");
+        /* fork and run the command on path */
+       if ((proc->pid = fork()) < 0) {
+           fprintf(stdout, "fork error");
+       } else if (proc->pid == 0) {
+           /* child */
+           if (proc->fdin != STDIN_FILENO) {
+               if (dup2(proc->fdin, STDIN_FILENO) < 0) {
+                   perror("dup2");
+                   exit(ERR_DUP2);
+               }
 
-   /* Process has been stopped */
-   proc->running = PROC_STOPPED;
+               if (close(proc->fdin) < 0) {
+                   perror("close");
+                   exit(ERR_CLOSE);
+               }
+           }
+
+           if (proc->fdout != STDOUT_FILENO) {
+               if (dup2(proc->fdout, STDOUT_FILENO) < 0) {
+                   perror("dup2");
+                   exit(ERR_DUP2);
+               }
+
+               if (close(proc->fdout) < 0) {
+                   perror("close");
+                   exit(ERR_CLOSE);
+               }
+           }
+
+           execvp(proc->argsv[0], proc->argsv);
+           fprintf(stdout, "couldn't execute: %s \r\n", proc->argsv[0]);
+           exit (ERR_CHILD);
+       } else {
+           /* parent */
+
+           /* close created pipes */
+           if (proc->fdin != STDIN_FILENO) {
+               if (close(proc->fdin) < 0) {
+                   perror("close");
+                   exit(ERR_CLOSE);
+               }
+           }
+
+           if (proc->fdout != STDOUT_FILENO) {
+               if (close(proc->fdout) < 0) {
+                   perror("close");
+                   exit(ERR_CLOSE);
+               }
+           }
+       }
+
+       if (proc->next == NULL) {
+           break;
+       } else {
+           proc = proc->next;
+       }
+    }
+
+    /* fix this to wait on all children */
+
+    /* parent, wait on child */
+    if (waitpid(proc->pid, &proc->pid, 0) < 0) {
+        perror("waitpid err");
+    }
+
+    /* Process has been stopped */
+    proc->running = PROC_STOPPED;
 
    fgCmd = NULL;
 }
@@ -323,8 +420,9 @@ int main(int argc, char **argv) {
     bgCmds = NULL;
 
     /* Handle SIGINT signals */
+    memset(&sa, 0, sizeof(sa));
     sa.sa_handler = sigint_recieved;
-    sa.sa_flags = 0x10000000;        /* SA_RESTART, not available in ANSI */
+    sa.sa_flags = (int) 0x10000000;        /* SA_RESTART, not available in ANSI */
     sigaction(SIGINT, &sa, 0);
 
     while (TRUE) {
@@ -342,7 +440,12 @@ int main(int argc, char **argv) {
 
         /* Check if error in reading line */
         if (lineLen < 0) {
-            fprintf(stdout, "\r\n");
+            printf("error reading line\r\n");
+            exit(ERR_READ);
+        }
+
+        /* only a newline char was read */
+        if (lineLen == 1) {
             continue;
         }
 
@@ -350,6 +453,8 @@ int main(int argc, char **argv) {
         if (buf[0] == '#') {
             continue;
         }
+
+        printf("liner %s\r\n", buf);
 
         /* Split the string into args */
         bufargs = split_string(buf);
