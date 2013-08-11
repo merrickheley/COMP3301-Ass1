@@ -178,13 +178,13 @@ void print_prompt() {
 }
 
 /* Get an entire line of text */
-int get_line(int input, char *buffer) {
+int get_line(int input, char **buffer) {
 
     int count;
     int ret;
     char c[2];
 
-    buffer = (char *) realloc(buffer, sizeof(char));
+    *buffer = (char *) malloc(sizeof(char));
     count = 0;
 
     /* Run while there are still characters to get */
@@ -193,16 +193,14 @@ int get_line(int input, char *buffer) {
         /* If the string is done, set the buffer */
         if (c[0] == '\n' || c[0] == '\0') {
             return count + 1;
-        } else {
-            /* Reallocate the buffer and increase its size by 1 */
-            buffer = (char*) realloc(buffer,
-                    (size_t) sizeof(char) *(count+2) );
-
-            /* Assign the character read to the buffer */
-            c[1] = '\0';
-            memcpy(buffer+count, c, 2);
-
         }
+
+        /* Reallocate the buffer and increase its size by 1 */
+        *buffer = (char *) realloc(*buffer, (count+2) * sizeof(char) );
+        /* Assign the character read to the buffer */
+        c[1] = '\0';
+        memcpy(*buffer+count, c, 2);
+
         count++;
     }
 
@@ -252,8 +250,6 @@ void process_buf(char **bufargs) {
     int j;
     int argc = 0;
     int fd[2];
-
-    printf("gotcha %s\r\n", bufargs[1]);
 
     /*  cd command*/
     if (strcmp(bufargs[0], "cd") == 0 && bufargs[0][2] == '\0') {
@@ -407,13 +403,10 @@ void sigint_recieved(int s) {
  * main execution loop
  */
 int main(int argc, char **argv) {
-    char *buf;                      /* Input buffer */
+    char *buf = NULL;               /* Input buffer */
     int lineLen;                    /* Length of buffer */
     char **bufargs;                 /* malloc, may cause segfaults */
     struct sigaction sa;
-
-    /* set up buffer */
-    buf = (char *) malloc(sizeof(char));
 
     /* set up fg and bg cmds */
     fgCmd = NULL;
@@ -431,7 +424,7 @@ int main(int argc, char **argv) {
         print_prompt();
 
         /* get line */
-        lineLen = get_line(STDIN_FILENO, buf);
+        lineLen = get_line(STDIN_FILENO, &buf);
 
         /* Check if EOF (no chars in buffer) */
         if (lineLen == 0) {
@@ -454,8 +447,6 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        printf("liner %s\r\n", buf);
-
         /* Split the string into args */
         bufargs = split_string(buf);
 
@@ -465,10 +456,11 @@ int main(int argc, char **argv) {
         /* free bufargs */
         free(bufargs);
 
+        /* free buffer */
+        free(buf);
     }
 
-    /* free buffer */
-    free(buf);
+
 
     /* Print a newline to finish the prompt */
     fprintf(stdout, "\r\n");
