@@ -36,8 +36,9 @@
 #define ERR_DUP2                            7
 #define ERR_CLOSE                           8
 #define ERR_READ                            9
+#define ERR_OPEN                            10
 
-/* Debug errrors */
+/* Debug errors */
 #define ERR_FREE_RUNNING_PROC               100
 #define ERR_CHILD_NOT_FOUND                 101
 

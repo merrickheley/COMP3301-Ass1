@@ -24,14 +24,16 @@
 
 #define _POSIX_SOURCE
 
+#include <fcntl.h>
+#include <linux/limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <sys/wait.h>
-#include <linux/limits.h>
+#include <unistd.h>
 
 #include "errs.h"
 
@@ -87,6 +89,8 @@ struct Process *init_process(size_t argSize) {
     proc->next = NULL;
     proc->fdin = STDIN_FILENO;
     proc->fdout = STDOUT_FILENO;
+    proc->filein = NULL;
+    proc->fileout = NULL;
 
     return proc;
 }
@@ -173,7 +177,7 @@ void print_prompt() {
 
     char *cwd;
 
-    /* change this to a CWD that is malloced */
+    /* change this to a CWD that is malloc'd */
     if ((cwd = getcwd(NULL, 0)) == NULL) {
         perror("getcwd() error");
         exit(ERR_GET_CWD);
@@ -335,7 +339,15 @@ void process_buf(char **bufargs) {
             proc = proc->next;
             cmd->runningProcs++;
             j = 0;
-        } else {
+        } else if (bufargs[i][0] == '<' && bufargs[i][1] == '\0') {
+            /* Set file for input redirection */
+            i++;
+            proc->filein = bufargs[i];
+        } else if (bufargs[i][0] == '>' && bufargs[i][1] == '\0') {
+            /* Set file for input redirection */
+            i++;
+            proc->fileout = bufargs[i];
+        }else {
             /* copy buffer across to process */
 
             proc->argsv[j] = bufargs[i];
@@ -363,6 +375,20 @@ void process_buf(char **bufargs) {
        } else if (proc->pid == 0) {
            /* child */
 
+           /* Check if necessary to open files */
+           if (proc->filein != NULL
+                   && (proc->fdin = open(proc->filein, O_RDONLY)) < 0) {
+               perror("read open failed");
+               exit(ERR_OPEN);
+           }
+
+           if (proc->fileout != NULL
+                   && (proc->fdout = open(proc->fileout,
+                           O_CREAT|O_WRONLY|O_TRUNC, 0777)) < 0) {
+               perror("write open failed");
+               exit(ERR_OPEN);
+           }
+
            /* dupe and close old file if different to standard */
            dupefd(proc->fdin, STDIN_FILENO);
            dupefd(proc->fdout, STDOUT_FILENO);
@@ -387,6 +413,7 @@ void process_buf(char **bufargs) {
        }
     }
 
+    /* Wait on running processes */
     while (cmd->runningProcs > 0) {
         /* parent, wait on children */
         if ((pid = waitpid(-1, &status, 0)) < 0) {
