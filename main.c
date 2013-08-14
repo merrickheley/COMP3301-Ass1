@@ -418,12 +418,17 @@ void process_buf(char **bufargs) {
 
 /* handler for SIGINT */
 void sigint_recieved(int s) {
+    struct Process *proc;
 
     fprintf(stdout, "\r\n");
 
-    /* If child exists, kill it, otherwise reprint the prompt */
-    if (fgCmd != NULL && fgCmd->procHead->running == PROC_RUNNING) {
-        kill(fgCmd->procHead->pid, SIGINT);
+    /* If foreground command exists, kill it, otherwise reprint the prompt */
+    if (fgCmd != NULL && fgCmd->runningProcs > 0) {
+        proc = fgCmd->procHead;
+        while (proc != NULL) {
+            kill(proc->pid, SIGINT);
+            proc = proc->next;
+        }
     } else {
         print_prompt();
     }
