@@ -50,21 +50,24 @@
  * Structure to hold a single process, can be linked (piped) to others
  */
 struct Process {
-    pid_t pid;              /* Pid of process */
-    char **argsv;           /* Arguments */
-    int running;            /* Running status (0 = stopped, 1 = running) */
-    int status;             /* waitpid status */
-    struct Process *next;   /* Next process to pipe data into */
-    int fdin;               /* Stdin for process */
-    int fdout;              /* Stdout for process */
+    pid_t pid;                  /* Pid of process */
+    char **argsv;               /* Arguments */
+    int running;                /* Running status (0 = stopped, 1 = running) */
+    int status;                 /* waitpid status */
+    struct Process *next;       /* Next process to pipe data into */
+    int fdin;                   /* Stdin for process */
+    int fdout;                  /* Stdout for process */
+    char *filein;               /* File name for input redirection */
+    char *fileout;              /* File name for output redirection */
 };
 
 /**
  * Structure to hold a command. Contains the head of the process
  */
 struct Command {
-    struct Process *procHead;
-    struct Command *next;
+    struct Process *procHead;   /* Head for process linked list */
+    struct Command *next;       /* Next command */
+    int runningProcs;           /* Number of processes in command */
 };
 
 /* Global foreground command */
@@ -113,25 +116,30 @@ struct Command *init_command() {
 
     cmd->procHead = NULL;
     cmd->next = NULL;
+    cmd->runningProcs = 0;
 
     return cmd;
 }
+
 /**
- * Free a command and it's processes, and make the head
+ * Free a command and it's processes, and make the head skip this command
  */
 void free_command(struct Command *head, struct Command *cmd) {
     struct Command *ptr = head;
 
     free_process(cmd->procHead);
 
-    /* find the current commands pointer */
-    while (ptr->next != cmd || ptr->next == NULL) {
-        ptr = ptr->next;
-    }
+    if (ptr != NULL) {
 
-    /* if there is a pointer to this command, make it skip this command */
-    if (ptr->next != NULL) {
-        ptr->next = cmd->next;
+        /* find the current commands pointer */
+        while (ptr->next != cmd && ptr->next != NULL) {
+            ptr = ptr->next;
+        }
+
+        /* if there is a pointer to this command, make it skip this command */
+        if (ptr->next != NULL) {
+            ptr->next = cmd->next;
+        }
     }
 
     free(cmd);
@@ -261,7 +269,8 @@ void closeIfDif(int oldfd, int newfd) {
 }
 
 /**
- * Dup2 new over old file descriptor if different, close the file after
+ * Dup2 new over old file descriptor if different, close the old file after
+ * if it's different
  */
 void dupefd(int oldfd, int newfd) {
     dupeIfDif(oldfd, newfd);
@@ -278,6 +287,8 @@ void process_buf(char **bufargs) {
     int j;
     int argc = 0;
     int fd[2];
+    int status;
+    pid_t pid;
 
     /*  cd command*/
     if (strcmp(bufargs[0], "cd") == 0 && bufargs[0][2] == '\0') {
@@ -296,6 +307,7 @@ void process_buf(char **bufargs) {
     /* Set up command and first process */
     cmd = init_command();
     proc = init_process(argc * sizeof(char *));
+    cmd->runningProcs++;
 
     /* Set the head of the current cmd to the process */
     cmd->procHead = proc;
@@ -316,10 +328,12 @@ void process_buf(char **bufargs) {
                 exit(ERR_PIPE);
             }
 
+            /* Update process and cmd */
             proc->fdout = fd[WRITE_END];
             proc->next->fdin = fd[READ_END];
 
             proc = proc->next;
+            cmd->runningProcs++;
             j = 0;
         } else {
             /* copy buffer across to process */
@@ -349,9 +363,11 @@ void process_buf(char **bufargs) {
        } else if (proc->pid == 0) {
            /* child */
 
+           /* dupe and close old file if different to standard */
            dupefd(proc->fdin, STDIN_FILENO);
            dupefd(proc->fdout, STDOUT_FILENO);
 
+           /* exec, print error if failed */
            execvp(proc->argsv[0], proc->argsv);
            fprintf(stdout, "couldn't execute: %s \r\n", proc->argsv[0]);
            exit (ERR_CHILD);
@@ -363,6 +379,7 @@ void process_buf(char **bufargs) {
            closeIfDif(proc->fdout, STDOUT_FILENO);
        }
 
+       /* Move to the next process in the queue */
        if (proc->next == NULL) {
            break;
        } else {
@@ -370,17 +387,33 @@ void process_buf(char **bufargs) {
        }
     }
 
-    /* fix this to wait on all children */
+    while (cmd->runningProcs > 0) {
+        /* parent, wait on children */
+        if ((pid = waitpid(-1, &status, 0)) < 0) {
+            perror("waitpid err");
+        }
 
-    /* parent, wait on child */
-    if (waitpid(proc->pid, &proc->pid, 0) < 0) {
-        perror("waitpid err");
+        /* find the returned process and set it to stopped */
+        proc = fgCmd->procHead;
+        while (proc != NULL) {
+            if (proc->pid  == pid) {
+                proc->running = PROC_STOPPED;
+                cmd->runningProcs--;
+                break;
+            }
+
+            proc = proc->next;
+        }
+
+        if (proc == NULL) {
+            printf("Error: Child not found\r\n");
+            exit(ERR_CHILD_NOT_FOUND);
+        }
     }
 
-    /* Process has been stopped */
-    proc->running = PROC_STOPPED;
-
-   fgCmd = NULL;
+    /* set the foreground command to null and clean it */
+    fgCmd = NULL;
+    free_command(NULL, cmd);
 }
 
 /* handler for SIGINT */

@@ -39,6 +39,7 @@
 
 /* Debug errrors */
 #define ERR_FREE_RUNNING_PROC               100
+#define ERR_CHILD_NOT_FOUND                 101
 
 /* Child errors */
 #define ERR_CHILD                           200
