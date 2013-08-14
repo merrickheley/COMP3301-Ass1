@@ -241,6 +241,34 @@ char **split_string(char *buf) {
 }
 
 /**
+ * Duplicate oldfd over newfd if different
+ */
+void dupeIfDif(int oldfd, int newfd) {
+    if (oldfd != newfd && dup2(oldfd, newfd) < 0) {
+        perror("dup2");
+        exit(ERR_DUP2);
+    }
+}
+
+/**
+ * Close oldfd if different to newfd
+ */
+void closeIfDif(int oldfd, int newfd) {
+    if (oldfd != newfd && close(oldfd) < 0) {
+        perror("close");
+        exit(ERR_CLOSE);
+    }
+}
+
+/**
+ * Dup2 new over old file descriptor if different, close the file after
+ */
+void dupefd(int oldfd, int newfd) {
+    dupeIfDif(oldfd, newfd);
+    closeIfDif(oldfd, newfd);
+}
+
+/**
  * Process the buffer arguments
  */
 void process_buf(char **bufargs) {
@@ -320,29 +348,9 @@ void process_buf(char **bufargs) {
            fprintf(stdout, "fork error");
        } else if (proc->pid == 0) {
            /* child */
-           if (proc->fdin != STDIN_FILENO) {
-               if (dup2(proc->fdin, STDIN_FILENO) < 0) {
-                   perror("dup2");
-                   exit(ERR_DUP2);
-               }
 
-               if (close(proc->fdin) < 0) {
-                   perror("close");
-                   exit(ERR_CLOSE);
-               }
-           }
-
-           if (proc->fdout != STDOUT_FILENO) {
-               if (dup2(proc->fdout, STDOUT_FILENO) < 0) {
-                   perror("dup2");
-                   exit(ERR_DUP2);
-               }
-
-               if (close(proc->fdout) < 0) {
-                   perror("close");
-                   exit(ERR_CLOSE);
-               }
-           }
+           dupefd(proc->fdin, STDIN_FILENO);
+           dupefd(proc->fdout, STDOUT_FILENO);
 
            execvp(proc->argsv[0], proc->argsv);
            fprintf(stdout, "couldn't execute: %s \r\n", proc->argsv[0]);
@@ -351,19 +359,8 @@ void process_buf(char **bufargs) {
            /* parent */
 
            /* close created pipes */
-           if (proc->fdin != STDIN_FILENO) {
-               if (close(proc->fdin) < 0) {
-                   perror("close");
-                   exit(ERR_CLOSE);
-               }
-           }
-
-           if (proc->fdout != STDOUT_FILENO) {
-               if (close(proc->fdout) < 0) {
-                   perror("close");
-                   exit(ERR_CLOSE);
-               }
-           }
+           closeIfDif(proc->fdin, STDIN_FILENO);
+           closeIfDif(proc->fdout, STDOUT_FILENO);
        }
 
        if (proc->next == NULL) {
