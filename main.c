@@ -78,6 +78,10 @@ void reapBgProc(void) {
 
             proc = proc->next;
         }
+
+        /* free cmd if no more running procs */
+
+
         cmd = cmd->next;
     }
 }
@@ -228,7 +232,6 @@ int stopBgProc(pid_t pid, int status) {
         while (proc != NULL) {
             /* if found, set to reaped */
             if (proc->pid == pid) {
-                cmd->runningProcs--;
                 proc->status = status;
                 proc->running = PROC_REAPED;
                 return TRUE;
