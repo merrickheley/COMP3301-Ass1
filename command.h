@@ -31,6 +31,7 @@
 
 #define PROC_STOPPED    0
 #define PROC_RUNNING    1
+#define PROC_REAPED     2
 
 /***************************************************************************
  *

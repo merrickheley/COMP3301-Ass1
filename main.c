@@ -184,6 +184,34 @@ void dupefd(int oldfd, int newfd) {
 }
 
 /**
+ * Set background task with the given PID to stopped
+ */
+int stopBgProc(pid_t pid, int status) {
+    struct Command *cmd = globalCmd[BG];
+    struct Process *proc = NULL;
+
+    /* Iterate over commands */
+    while (cmd != NULL) {
+
+        proc = cmd->procHead;
+
+        /* Iterate over processes within command */
+        while (proc != NULL) {
+            if (proc->pid == pid) {
+                proc->status = status;
+                proc->running = PROC_REAPED;
+                return TRUE;
+            }
+
+            proc = proc->next;
+        }
+        cmd = cmd->next;
+    }
+
+    return FALSE;
+}
+
+/**
  * Process the buffer arguments
  */
 void process_buf(char **bufargs) {
@@ -196,6 +224,7 @@ void process_buf(char **bufargs) {
     int status;
     pid_t pid;
     int cmdType = FG;
+    char devnull[] = "/dev/null";
 
     /*  cd command*/
     if (strcmp(bufargs[0], "cd") == 0 && bufargs[0][2] == '\0') {
@@ -253,6 +282,7 @@ void process_buf(char **bufargs) {
         } else if (bufargs[i][0] == '&' && bufargs[i][1] == '\0') {
             /* Set command for backgrounding */
             cmdType = BG;
+            cmd->procHead->filein = devnull;
         } else {
             /* copy buffer across to process */
 
@@ -281,13 +311,14 @@ void process_buf(char **bufargs) {
        } else if (proc->pid == 0) {
            /* child */
 
-           /* Check if necessary to open files */
+           /* Check if necessary to do input redirection*/
            if (proc->filein != NULL
                    && (proc->fdin = open(proc->filein, O_RDONLY)) < 0) {
                perror("read open failed");
                exit(ERR_OPEN);
            }
 
+           /* Check if necessary to do output redirection*/
            if (proc->fileout != NULL
                    && (proc->fdout = open(proc->fileout,
                            O_CREAT|O_WRONLY|O_TRUNC, 0777)) < 0) {
@@ -343,7 +374,8 @@ void process_buf(char **bufargs) {
             proc = proc->next;
         }
 
-        if (proc == NULL) {
+        /* no children not found and pid does not belong to a bg process */
+        if (proc == NULL && stopBgProc(pid, status) == FALSE) {
             printf("Error: Child not found\r\n");
             exit(ERR_CHILD_NOT_FOUND);
         }
