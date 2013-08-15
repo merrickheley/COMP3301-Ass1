@@ -25,7 +25,7 @@ CC = gcc
 C_FLAGS = -Wall -ansi -pedantic -g -D_POSIX_C_SOURCE
 
 # Files to compile
-C_FILES = main.c
+C_FILES = main.c command.c
 OBJS := $(C_FILES:.c=.o)
 
 # Documentation

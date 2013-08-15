@@ -25,7 +25,6 @@
 #define _POSIX_SOURCE
 
 #include <fcntl.h>
-#include <linux/limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -36,6 +35,7 @@
 #include <unistd.h>
 
 #include "errs.h"
+#include "command.h"
 
 #define TRUE            1
 #define FALSE           0
@@ -45,111 +45,11 @@
 #define READ_END        0
 #define WRITE_END       1
 
-#define PROC_STOPPED    0
-#define PROC_RUNNING    1
-
 #define BG              0
 #define FG              1
 
-
-/**
- * Structure to hold a single process, can be linked (piped) to others
- */
-struct Process {
-    pid_t pid;                  /* Pid of process */
-    char **argsv;               /* Arguments */
-    int running;                /* Running status (0 = stopped, 1 = running) */
-    int status;                 /* waitpid status */
-    struct Process *next;       /* Next process to pipe data into */
-    int fdin;                   /* Stdin for process */
-    int fdout;                  /* Stdout for process */
-    char *filein;               /* File name for input redirection */
-    char *fileout;              /* File name for output redirection */
-};
-
-/**
- * Structure to hold a command. Contains the head of the process
- */
-struct Command {
-    struct Process *procHead;   /* Head for process linked list */
-    struct Command *next;       /* Next command */
-    int runningProcs;           /* Number of processes in command */
-};
-
 /* Global command struct */
 struct Command *globalCmd[2];
-
-/**
- * Initialise a process with default values
- */
-struct Process *init_process(size_t argSize) {
-    struct Process * proc = (struct Process *) malloc(sizeof(struct Process));
-
-    proc->pid = -1;
-    proc->argsv = (char **) malloc(argSize);
-    proc->running = 0;
-    proc->next = NULL;
-    proc->fdin = STDIN_FILENO;
-    proc->fdout = STDOUT_FILENO;
-    proc->filein = NULL;
-    proc->fileout = NULL;
-
-    return proc;
-}
-
-/**
- * Free a process and linked processes in the list
- */
-void free_process(struct Process *proc) {
-
-    if (proc->next != NULL) {
-        free_process(proc->next);
-    }
-
-    if (proc->running) {
-        exit(ERR_FREE_RUNNING_PROC);
-    }
-
-    free(proc->argsv);
-    free(proc);
-}
-
-/**
- * Initialise a command with default values
- */
-struct Command *init_command() {
-    struct Command *cmd = (struct Command *) malloc(sizeof(struct Command));
-
-    cmd->procHead = NULL;
-    cmd->next = NULL;
-    cmd->runningProcs = 0;
-
-    return cmd;
-}
-
-/**
- * Free a command and it's processes, and make the head skip this command
- */
-void free_command(struct Command *head, struct Command *cmd) {
-    struct Command *ptr = head;
-
-    free_process(cmd->procHead);
-
-    if (ptr != NULL) {
-
-        /* find the current commands pointer */
-        while (ptr->next != cmd && ptr->next != NULL) {
-            ptr = ptr->next;
-        }
-
-        /* if there is a pointer to this command, make it skip this command */
-        if (ptr->next != NULL) {
-            ptr->next = cmd->next;
-        }
-    }
-
-    free(cmd);
-}
 
 /**
  * changes the current working directory
@@ -419,6 +319,11 @@ void process_buf(char **bufargs) {
        }
     }
 
+    /* If background command, then don't wait on processes */
+    if (cmdType == BG) {
+        return;
+    }
+
     /* Wait on running processes */
     while (cmd->runningProcs > 0) {
         /* parent, wait on children */
@@ -527,8 +432,6 @@ int main(int argc, char **argv) {
         /* free buffer */
         free(buf);
     }
-
-
 
     /* Print a newline to finish the prompt */
     fprintf(stdout, "\r\n");
