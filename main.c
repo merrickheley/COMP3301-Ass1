@@ -48,6 +48,10 @@
 #define PROC_STOPPED    0
 #define PROC_RUNNING    1
 
+#define BG              0
+#define FG              1
+
+
 /**
  * Structure to hold a single process, can be linked (piped) to others
  */
@@ -72,10 +76,8 @@ struct Command {
     int runningProcs;           /* Number of processes in command */
 };
 
-/* Global foreground command */
-struct Command *fgCmd;
-/* Global background commands */
-struct Command *bgCmds;
+/* Global command struct */
+struct Command *globalCmd[2];
 
 /**
  * Initialise a process with default values
@@ -293,6 +295,7 @@ void process_buf(char **bufargs) {
     int fd[2];
     int status;
     pid_t pid;
+    int cmdType = FG;
 
     /*  cd command*/
     if (strcmp(bufargs[0], "cd") == 0 && bufargs[0][2] == '\0') {
@@ -347,7 +350,10 @@ void process_buf(char **bufargs) {
             /* Set file for input redirection */
             i++;
             proc->fileout = bufargs[i];
-        }else {
+        } else if (bufargs[i][0] == '&' && bufargs[i][1] == '\0') {
+            /* Set command for backgrounding */
+            cmdType = BG;
+        } else {
             /* copy buffer across to process */
 
             proc->argsv[j] = bufargs[i];
@@ -361,8 +367,8 @@ void process_buf(char **bufargs) {
     /* reset proc back to start */
     proc = cmd->procHead;
 
-    /* set the foreground command to the current command */
-    fgCmd = cmd;
+    /* set the command type */
+    globalCmd[cmdType] = cmd;
 
     while (TRUE) {
 
@@ -421,7 +427,7 @@ void process_buf(char **bufargs) {
         }
 
         /* find the returned process and set it to stopped */
-        proc = fgCmd->procHead;
+        proc = globalCmd[FG]->procHead;
         while (proc != NULL) {
             if (proc->pid  == pid) {
                 proc->running = PROC_STOPPED;
@@ -439,7 +445,7 @@ void process_buf(char **bufargs) {
     }
 
     /* set the foreground command to null and clean it */
-    fgCmd = NULL;
+    globalCmd[FG] = NULL;
     free_command(NULL, cmd);
 }
 
@@ -450,8 +456,8 @@ void sigint_recieved(int s) {
     fprintf(stdout, "\r\n");
 
     /* If foreground command exists, kill it, otherwise reprint the prompt */
-    if (fgCmd != NULL && fgCmd->runningProcs > 0) {
-        proc = fgCmd->procHead;
+    if (globalCmd[FG] != NULL && globalCmd[FG]->runningProcs > 0) {
+        proc = globalCmd[FG]->procHead;
         while (proc != NULL) {
             kill(proc->pid, SIGINT);
             proc = proc->next;
@@ -471,8 +477,8 @@ int main(int argc, char **argv) {
     struct sigaction sa;
 
     /* set up fg and bg cmds */
-    fgCmd = NULL;
-    bgCmds = NULL;
+    globalCmd[FG] = NULL;
+    globalCmd[BG] = NULL;
 
     /* Handle SIGINT signals */
     memset(&sa, 0, sizeof(sa));
