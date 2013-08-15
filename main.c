@@ -52,7 +52,38 @@
 struct Command *globalCmd[2];
 
 /**
- * changes the current working directory
+ * Reap any bg commands that have completed
+ */
+void reapBgProc(void) {
+    struct Command *cmd = globalCmd[BG];
+    struct Process *proc = NULL;
+
+    /* Iterate over commands */
+    while (cmd != NULL) {
+
+        proc = cmd->procHead;
+
+        /* Iterate over processes within command */
+        while (proc != NULL) {
+
+            /* print the exit status if already reaped, or requires reaping */
+            if (proc->running == PROC_REAPED
+                    || (proc->running == PROC_RUNNING
+                    && waitpid(proc->pid, &proc->status, WNOHANG) > 0)) {
+
+                proc->running = PROC_STOPPED;
+                cmd->runningProcs--;
+                printf("%d\t%d\r\n", proc->pid, WEXITSTATUS(proc->status));
+            }
+
+            proc = proc->next;
+        }
+        cmd = cmd->next;
+    }
+}
+
+/**
+ * Changes the current working directory
  * If no directory is specified, change to home
  */
 void set_cwd(char *cwd) {
@@ -66,16 +97,14 @@ void set_cwd(char *cwd) {
     /* cd to the new dir */
     if (chdir(cwd) < 0) {
         perror("chdir() error");
-        exit(ERR_SET_CWD);
+        /* exit(ERR_SET_CWD);   Do not crash on error */
     }
 }
 
 /**
  * prints the prompt to the user for a command
- * Check if any background tasks finished
  */
 void print_prompt() {
-    /* Handle any background tasks */
 
     char *cwd;
 
@@ -197,7 +226,9 @@ int stopBgProc(pid_t pid, int status) {
 
         /* Iterate over processes within command */
         while (proc != NULL) {
+            /* if found, set to reaped */
             if (proc->pid == pid) {
+                cmd->runningProcs--;
                 proc->status = status;
                 proc->running = PROC_REAPED;
                 return TRUE;
@@ -337,6 +368,11 @@ void process_buf(char **bufargs) {
        } else {
            /* parent */
 
+           /* print the pid for background tasks */
+           if (cmdType == BG) {
+               printf("%d\r\n", proc->pid);
+           }
+
            /* close created pipes */
            closeIfDif(proc->fdin, STDIN_FILENO);
            closeIfDif(proc->fdout, STDOUT_FILENO);
@@ -403,6 +439,7 @@ void sigint_recieved(int s) {
             proc = proc->next;
         }
     } else {
+        reapBgProc();
         print_prompt();
     }
 }
@@ -429,6 +466,7 @@ int main(int argc, char **argv) {
     while (TRUE) {
 
         /* print prompt */
+        reapBgProc();
         print_prompt();
 
         /* get line */
