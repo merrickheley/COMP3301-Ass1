@@ -363,8 +363,11 @@ void sigint_recieved(int s) {
     /* If foreground command exists, kill it, otherwise reprint the prompt */
     if (globalCmd[FG] != NULL && globalCmd[FG]->runningProcs > 0) {
         proc = globalCmd[FG]->procHead;
+        /* Kill all running processes within the command */
         while (proc != NULL) {
-            kill(proc->pid, SIGINT);
+            if (proc->running == PROC_RUNNING) {
+                kill(proc->pid, SIGINT);
+            }
             proc = proc->next;
         }
     } else {
