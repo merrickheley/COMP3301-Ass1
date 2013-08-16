@@ -290,8 +290,10 @@ int process_buf(char **bufargs) {
             proc->fileout = bufargs[i];
         } else if (bufargs[i][0] == '&' && bufargs[i][1] == '\0') {
             /* Set command for backgrounding */
-            cmdType = BG;
-            cmd->procHead->filein = devnull;
+            if (bufargs[i+1] == ARR_END) {
+                cmdType = BG;
+                cmd->procHead->filein = devnull;
+            }
         } else {
             /* copy buffer across to process */
 
