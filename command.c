@@ -26,7 +26,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+#define FALSE   0
+#define TRUE    1
 
 /**
  * Initialise a process with default values
@@ -95,6 +99,55 @@ void free_command(struct Command *head, struct Command *cmd) {
     free_process(cmd->procHead);
     free(cmd);
     cmd = NULL;
+}
+
+/**
+ * Reap any commands that have completed
+ */
+void reapCommand(struct Command **head) {
+    struct Command *cmd = *head;
+    struct Process *proc = NULL;
+    struct Command *nextCmd = NULL;
+    int isHead = FALSE;
+
+    /* Iterate over commands */
+    while (cmd != NULL) {
+
+        proc = cmd->procHead;
+
+        /* Iterate over processes within command */
+        while (proc != NULL) {
+
+            /* print the exit status if already reaped, or requires reaping */
+            if (proc->running == PROC_REAPED
+                    || (proc->running == PROC_RUNNING
+                    && waitpid(proc->pid, &proc->status, WNOHANG) > 0)) {
+
+                proc->running = PROC_STOPPED;
+                cmd->runningProcs--;
+                printf("%d\t%d\r\n", proc->pid, WEXITSTATUS(proc->status));
+            }
+
+            proc = proc->next;
+        }
+
+        /* free cmd if no more running procs
+         * move to the next command */
+        if (cmd->runningProcs == 0) {
+            isHead = cmd == *head;
+
+            nextCmd = cmd->next;
+            free_command(*head, cmd);
+            cmd = nextCmd;
+
+            if (isHead) {
+                *head = nextCmd;
+            }
+
+        } else {
+            cmd = cmd->next;
+        }
+    }
 }
 
 

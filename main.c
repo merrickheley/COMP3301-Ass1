@@ -52,55 +52,6 @@
 struct Command *globalCmd[2];
 
 /**
- * Reap any bg commands that have completed
- */
-void reapBgProc(void) {
-    struct Command *cmd = globalCmd[BG];
-    struct Process *proc = NULL;
-    struct Command *nextCmd = NULL;
-    int isHead = FALSE;
-
-    /* Iterate over commands */
-    while (cmd != NULL) {
-
-        proc = cmd->procHead;
-
-        /* Iterate over processes within command */
-        while (proc != NULL) {
-
-            /* print the exit status if already reaped, or requires reaping */
-            if (proc->running == PROC_REAPED
-                    || (proc->running == PROC_RUNNING
-                    && waitpid(proc->pid, &proc->status, WNOHANG) > 0)) {
-
-                proc->running = PROC_STOPPED;
-                cmd->runningProcs--;
-                printf("%d\t%d\r\n", proc->pid, WEXITSTATUS(proc->status));
-            }
-
-            proc = proc->next;
-        }
-
-        /* free cmd if no more running procs
-         * move to the next command */
-        if (cmd->runningProcs == 0) {
-            isHead = cmd == globalCmd[BG];
-
-            nextCmd = cmd->next;
-            free_command(globalCmd[BG], cmd);
-            cmd = nextCmd;
-
-            if (isHead) {
-                globalCmd[BG] = nextCmd;
-            }
-
-        } else {
-            cmd = cmd->next;
-        }
-    }
-}
-
-/**
  * Changes the current working directory
  * If no directory is specified, change to home
  */
@@ -265,6 +216,7 @@ int stopBgProc(pid_t pid, int status) {
  */
 int process_buf(char **bufargs) {
     struct Command *cmd;
+    struct Command *prev;
     struct Process *proc;
     int i;
     int j;
@@ -343,12 +295,19 @@ int process_buf(char **bufargs) {
     }
     proc->argsv[j] = ARR_END;
 
+    /* Add the command to the global commands */
+    if (globalCmd[cmdType] == NULL) {
+        globalCmd[cmdType] = cmd;
+    } else {
+        prev = globalCmd[cmdType];
+        while (prev->next != NULL) prev = prev->next;
+        prev->next = cmd;
+    }
+
     /* reset proc back to start */
     proc = cmd->procHead;
 
-    /* set the command type */
-    globalCmd[cmdType] = cmd;
-
+    /* Fork the processes */
     while (TRUE) {
 
         /* Process is now running */
@@ -459,7 +418,7 @@ void sigint_recieved(int s) {
             proc = proc->next;
         }
     } else {
-        reapBgProc();
+        reapCommand(&globalCmd[BG]);
         print_prompt();
     }
 }
@@ -487,16 +446,11 @@ int main(int argc, char **argv) {
     while (TRUE) {
 
         /* print prompt */
-        reapBgProc();
+        reapCommand(&globalCmd[BG]);
         print_prompt();
 
         /* get line */
         lineLen = get_line(STDIN_FILENO, &buf);
-
-        /* Check if EOF (no chars in buffer) */
-        if (lineLen == 0) {
-            break;
-        }
 
         /* Check if error in reading line */
         if (lineLen < 0) {
@@ -504,13 +458,15 @@ int main(int argc, char **argv) {
             exit(ERR_READ);
         }
 
-        /* only a newline char was read */
-        if (lineLen == 1) {
-            continue;
+        /* Check if EOF (no chars in buffer) */
+        if (lineLen == 0) {
+            free(buf);
+            break;
         }
 
-        /* command is a comment, do not process */
-        if (buf[0] == '#') {
+        /* if more than one char is read and it's not a comment */
+        if (lineLen == 1 || buf[0] == '#') {
+            free(buf);
             continue;
         }
 

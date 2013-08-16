@@ -89,4 +89,9 @@ struct Command *init_command(void);
  */
 void free_command(struct Command *head, struct Command *cmd);
 
+/**
+ * Reap any commands that have completed
+ */
+void reapCommand(struct Command **head);
+
 #endif /* COMMAND_H_ */
