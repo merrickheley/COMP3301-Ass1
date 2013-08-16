@@ -48,8 +48,11 @@
 #define BG              0
 #define FG              1
 
+/* Must be globals for signal handler */
 /* Global command struct */
 struct Command *globalCmd[2];
+/* Global boolean for input file */
+int inputFile;
 
 /**
  * Changes the current working directory
@@ -76,6 +79,11 @@ void set_cwd(char *cwd) {
 void print_prompt() {
 
     char *cwd;
+
+    /* Do nothing if input is from script */
+    if (inputFile) {
+        return;
+    }
 
     /* change this to a CWD that is malloc'd */
     if ((cwd = getcwd(NULL, 0)) == NULL) {
@@ -440,6 +448,7 @@ int main(int argc, char **argv) {
     char **bufargs;                 /* malloc, may cause segfaults */
     struct sigaction sa;
     int quit = FALSE;
+    int inputFd = 0;
 
     /* set up fg and bg cmds */
     globalCmd[FG] = NULL;
@@ -448,8 +457,22 @@ int main(int argc, char **argv) {
     /* Handle SIGINT signals */
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = sigint_recieved;
-    sa.sa_flags = (int) 0x10000000;        /* SA_RESTART, not available in ANSI */
+    sa.sa_flags = (int) 0x10000000;    /* SA_RESTART, not available in ANSI */
     sigaction(SIGINT, &sa, 0);
+
+    /* Handle script argument */
+    inputFile = FALSE;
+    if (argc > 1) {
+        /* Check if necessary to do output redirection*/
+        if ((inputFd = open(argv[1], O_RDONLY)) < 0) {
+            perror("write open failed");
+            exit(ERR_OPEN);
+        }
+
+        /* dupe and close old file if different to standard */
+        dupefd(inputFd, STDIN_FILENO);
+        inputFile = TRUE;
+    }
 
     while (TRUE) {
 
@@ -494,7 +517,6 @@ int main(int argc, char **argv) {
             break;
         }
     }
-
 
     return (ERR_EOF);
 }
