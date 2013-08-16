@@ -57,6 +57,8 @@ struct Command *globalCmd[2];
 void reapBgProc(void) {
     struct Command *cmd = globalCmd[BG];
     struct Process *proc = NULL;
+    struct Command *nextCmd = NULL;
+    int isHead = FALSE;
 
     /* Iterate over commands */
     while (cmd != NULL) {
@@ -79,10 +81,22 @@ void reapBgProc(void) {
             proc = proc->next;
         }
 
-        /* free cmd if no more running procs */
+        /* free cmd if no more running procs
+         * move to the next command */
+        if (cmd->runningProcs == 0) {
+            isHead = cmd == globalCmd[BG];
 
+            nextCmd = cmd->next;
+            free_command(globalCmd[BG], cmd);
+            cmd = nextCmd;
 
-        cmd = cmd->next;
+            if (isHead) {
+                globalCmd[BG] = nextCmd;
+            }
+
+        } else {
+            cmd = cmd->next;
+        }
     }
 }
 
@@ -247,8 +261,9 @@ int stopBgProc(pid_t pid, int status) {
 
 /**
  * Process the buffer arguments
+ * Return TRUE to exit program
  */
-void process_buf(char **bufargs) {
+int process_buf(char **bufargs) {
     struct Command *cmd;
     struct Process *proc;
     int i;
@@ -263,12 +278,12 @@ void process_buf(char **bufargs) {
     /*  cd command*/
     if (strcmp(bufargs[0], "cd") == 0 && bufargs[0][2] == '\0') {
         set_cwd(bufargs[1]);
-        return;
+        return FALSE;
     }
 
     /* exit command */
     if (strcmp(bufargs[0], "exit") == 0 && bufargs[0][4] == '\0') {
-        exit(ERR_EOF);
+        return TRUE;
     }
 
     /* Get argc */
@@ -391,7 +406,7 @@ void process_buf(char **bufargs) {
 
     /* If background command, then don't wait on processes */
     if (cmdType == BG) {
-        return;
+        return FALSE;
     }
 
     /* Wait on running processes */
@@ -423,6 +438,8 @@ void process_buf(char **bufargs) {
     /* set the foreground command to null and clean it */
     globalCmd[FG] = NULL;
     free_command(NULL, cmd);
+
+    return FALSE;
 }
 
 /* handler for SIGINT */
@@ -455,6 +472,7 @@ int main(int argc, char **argv) {
     int lineLen;                    /* Length of buffer */
     char **bufargs;                 /* malloc, may cause segfaults */
     struct sigaction sa;
+    int quit = FALSE;
 
     /* set up fg and bg cmds */
     globalCmd[FG] = NULL;
@@ -500,17 +518,19 @@ int main(int argc, char **argv) {
         bufargs = split_string(buf);
 
         /* Process the args */
-        process_buf(bufargs);
+        quit = process_buf(bufargs);
 
         /* free bufargs */
         free(bufargs);
 
         /* free buffer */
         free(buf);
+
+        if (quit) {
+            break;
+        }
     }
 
-    /* Print a newline to finish the prompt */
-    fprintf(stdout, "\r\n");
 
     return (ERR_EOF);
 }

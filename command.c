@@ -24,6 +24,7 @@
 
 #include "command.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -81,22 +82,19 @@ struct Command *init_command(void) {
 void free_command(struct Command *head, struct Command *cmd) {
     struct Command *ptr = head;
 
-    free_process(cmd->procHead);
-
-    if (ptr != NULL) {
-
-        /* find the current commands pointer */
-        while (ptr->next != cmd && ptr->next != NULL) {
-            ptr = ptr->next;
+    /* Link pointer to cmd to cmd->next */
+    while (ptr != NULL) {
+        if (ptr->next == cmd) {
+            ptr->next = ptr->next->next;
+            break;
         }
 
-        /* if there is a pointer to this command, make it skip this command */
-        if (ptr->next != NULL) {
-            ptr->next = cmd->next;
-        }
+        ptr = ptr->next;
     }
 
+    free_process(cmd->procHead);
     free(cmd);
+    cmd = NULL;
 }
 
 
