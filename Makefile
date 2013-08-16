@@ -28,15 +28,14 @@ C_FLAGS = -Wall -ansi -pedantic -g -D_POSIX_C_SOURCE
 C_FILES = main.c command.c
 OBJS := $(C_FILES:.c=.o)
 
-# Documentation
-DOC_CONFIG = Doxyfile
-DOC_FOLDER = docs
+# Man File
+MAN_FILE = $(PROGRAM).1
 
 # Distribution
 DIST_NAME = $(AUTHOR).tar.gz
-DIST_FILES = $(SRC_FOLDER) $(LICENSE) Makefile $(C_FILES)
+DIST_FILES = $(SRC_FOLDER) $(LICENSE) Makefile $(C_FILES) $(MAN_FILE)
 
-all: install
+all: install man
 
 install: $(OBJS)
 	$(CC) $(C_FLAGS) $(OBJS) -o $(PROGRAM)
@@ -44,11 +43,14 @@ install: $(OBJS)
 %.o: %.c
 	$(CC) $(C_FLAGS) -c $<
 
-dist:
+dist: clean
 	tar -cvf $(DIST_NAME) $(DIST_FILES)
 	
+man: 
+	install -g 0 -o 0 -m 0644 $(MAN_FILE) /usr/local/man/
+	gzip /usr/local/man/$(MAN_FILE)
 clean:
-	@rm -rf $(OBJS) $(PROGRAM) $(DOC_FOLDER) $(DIST_NAME)
+	@rm -rf $(OBJS) $(PROGRAM) $(DIST_NAME)
 
 #Do not add OBJS, if the files exist do not rebuild them
-.PHONY: all install clean dist docs
+.PHONY: all install clean dist

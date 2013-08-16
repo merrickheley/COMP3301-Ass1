@@ -1,0 +1,151 @@
+.\" Manpage for qshell.
+.\" Contact: merrick.heley@uqconnect.edu.au
+.TH man 1 "17 August 2013" "1.0" "qshell man page"
+.SH NAME
+qshell \- Simple shell
+.SH SYNOPSIS
+qshell [command_file]
+.SH DESCRIPTION
+qshell is a simple shell. 
+.HP
+It supports:
+.br
+o the redirection of standard input 
+.br
+o the redirection of standard output
+.br
+o use of | (an unnamed pipe)
+.br
+o foreground processes 
+.br
+o background processes 
+.br
+o comments (lines beginning with the # character). 
+.br
+.HP
+and the following two built in commands:
+.br
+o exit
+.br
+o cd
+.HP
+Once inside qshell, the syntax for executing commands is:
+.br
+command [arg1 arg2 ...] [< input_file] [> output_file] [&]
+.br
+or
+.br
+command [arg1 arg2 ...] [> output_file] [< input_file] [&]
+.br
+or
+.br
+command [arg1 ...] [< input_file] | command [arg1 ...] [> output_file]
+.SH OPTIONS
+qshell does not take any options. However, you can supply a command file which 
+will replace stdin.
+.SH EXIT STATUS
+Errors that are detected by the shell, such as a syntax error or system error, 
+will cause the shell to exit with a non-zero exit status.
+
+.SS System Errors
+.IP 1
+Error in getting current working directory
+.IP 2
+Error in setting current working directory
+.IP 3
+Error in getting HOME environment variable
+.IP 4
+Error in forking
+.IP 5
+Error in piping
+.IP 6
+Error in waitpid
+.IP 7
+Error in duplicating file descriptor
+.IP 8
+Error in closing a file descriptor
+.IP 9
+Error in reading from stdin
+.IP 10
+Error in opening a file
+
+.SS Debug errors
+.IP 100
+Attempted to free a running program
+.IP 101
+Received a PID from wait that was not a valid child PID
+
+.SS Child errors
+.IP 200
+Error in child process, exec did not run
+.SH ENVIRONMENT
+.IP HOME
+Set automatically by login(1) from the user's login directory in the password 
+file (passwd(4)).
+.IP PATH
+The default search path for executables.
+.IP CDPATH
+The search path used with the cd builtin.
+.IP PWD
+The logical value of the current working directory.  This is set by the cd command
+.br 
+This environment variable also functions as the default argument for the cd 
+builtin.
+.SH FILES
+.IP command.c        
+Holds the functions for dealing with commands and processes
+.IP command.h
+Header file for command.c
+.IP errs.h
+Header file defining all the error codes qshell may return
+.IP main.c
+Main file for qshell
+.SH NOTES
+qshell implements extensions to the requirements that make it more robust at 
+handling arguments. It can also take an indefinite line size, indefinite 
+number of arguments, indefinite number of pipes and supports background piping.
+.SH BUGS
+Vulnerable to race conditions with signal handling if the signal occurs after 
+the command has been processed but before the shell waits. This is an extremely 
+rare occurence and no effort has been made to handle it.
+
+Memory is not entirely freed before the forked process is exec'd over. 
+The main process has no memory leaks.
+.SH EXAMPLE
+./qshell <<___EOF___
+echo No Arguments Command Test
+echo ps
+ps
+echo Command with Arguments Test
+echo ps -l
+ps -l
+echo Output Redirection Test
+echo  ps -l  outputredirect myFile
+ps -l > myFile
+echo Input Redirection Test
+echo wc inputredirect myFile
+wc < myFile
+echo Comment Test
+# Does qshell treat this as a comment?
+echo Blank Line Test
+
+exit
+___EOF___
+
+.SH AUTHOR
+Merrick Heley (merrick.heley@uqconnect.edu.au)
+.SH SEE ALSO
+sh(1), bash(1)
+.SH COPYRIGHT
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
