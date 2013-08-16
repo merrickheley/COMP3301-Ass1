@@ -265,7 +265,7 @@ int process_buf(char **bufargs) {
         if (bufargs[i][0] == '|' && bufargs[i][1] == '\0') {
             /* pipe between processes */
 
-            proc->argsv[j+1] = ARR_END;
+            proc->argsv[j] = ARR_END;
             proc->next = init_process(argc * sizeof(char *));
 
             if (pipe(fd) < 0) {
@@ -300,9 +300,7 @@ int process_buf(char **bufargs) {
         } else {
             /* copy buffer across to process */
             proc->argsv[j] = bufargs[i];
-            printf("proc/arg %s %s\r\n", proc->argsv[0], proc->argsv[j]);
-
-            j++;
+            proc->argsv[++j] = ARR_END;
         }
 
         i++;
