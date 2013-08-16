@@ -61,6 +61,7 @@ struct Command {
     struct Process *procHead;   /* Head for process linked list */
     struct Command *next;       /* Next command */
     int runningProcs;           /* Number of processes in command */
+    pid_t group;                /* pid group for command */
 };
 
 /***************************************************************************

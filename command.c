@@ -76,6 +76,7 @@ struct Command *init_command(void) {
     cmd->procHead = NULL;
     cmd->next = NULL;
     cmd->runningProcs = 0;
+    cmd->group = 0;
 
     return cmd;
 }

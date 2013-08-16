@@ -211,7 +211,7 @@ int stopBgProc(pid_t pid, int status) {
 }
 
 /**
- * Process the buffer arguments
+ * Process the buffer
  * Return TRUE to exit program
  */
 int process_buf(char **bufargs) {
@@ -344,6 +344,14 @@ int process_buf(char **bufargs) {
            exit (ERR_CHILD);
        } else {
            /* parent */
+
+           /* Set the group pid */
+           if (!cmd->group) {
+               setpgid(proc->pid, proc->pid);
+               cmd->group = proc->pid;
+           } else {
+               setpgid(proc->pid, cmd->group);
+           }
 
            /* print the pid for background tasks */
            if (cmdType == BG) {
