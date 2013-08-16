@@ -292,7 +292,9 @@ int process_buf(char **bufargs) {
             /* Set command for backgrounding */
             if (bufargs[i+1] == ARR_END) {
                 cmdType = BG;
-                cmd->procHead->filein = devnull;
+                if (cmd->procHead->filein == NULL) {
+                    cmd->procHead->filein = devnull;
+                }
             }
         } else {
             /* copy buffer across to process */

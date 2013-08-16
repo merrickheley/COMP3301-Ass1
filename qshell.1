@@ -92,13 +92,8 @@ The logical value of the current working directory.  This is set by the cd comma
 This environment variable also functions as the default argument for the cd 
 builtin.
 .SH FILES
-.IP command.c        
-Holds the functions for dealing with commands and processes
-.IP command.h
-Header file for command.c
-.IP errs.h
-Header file defining all the error codes qshell may return
-.IP main.c
+.IP /dev/null
+Used for stdin redirection for background processes
 Main file for qshell
 .SH NOTES
 qshell implements extensions to the requirements that make it more robust at 
