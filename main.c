@@ -280,6 +280,7 @@ int process_buf(char **bufargs) {
             proc = proc->next;
             cmd->runningProcs++;
             j = 0;
+
         } else if (bufargs[i][0] == '<' && bufargs[i][1] == '\0') {
             /* Set file for input redirection */
             i++;
@@ -298,8 +299,9 @@ int process_buf(char **bufargs) {
             }
         } else {
             /* copy buffer across to process */
-
             proc->argsv[j] = bufargs[i];
+            printf("proc/arg %s %s\r\n", proc->argsv[0], proc->argsv[j]);
+
             j++;
         }
 
