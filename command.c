@@ -23,7 +23,9 @@
  */
 
 #include "command.h"
+#include "errs.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/wait.h>
@@ -77,6 +79,7 @@ struct Command *init_command(void) {
     cmd->next = NULL;
     cmd->runningProcs = 0;
     cmd->group = 0;
+    cmd->type = FG;
 
     return cmd;
 }
@@ -105,7 +108,7 @@ void free_command(struct Command *head, struct Command *cmd) {
 /**
  * Reap any commands that have completed
  */
-void reapCommand(struct Command **head) {
+void reap_command(struct Command **head) {
     struct Command *cmd = *head;
     struct Process *proc = NULL;
     struct Command *nextCmd = NULL;
@@ -151,4 +154,103 @@ void reapCommand(struct Command **head) {
     }
 }
 
+/**
+ * Duplicate oldfd over newfd if different
+ */
+void dupeIfDif(int oldfd, int newfd) {
+    if (oldfd != newfd && dup2(oldfd, newfd) < 0) {
+        perror("dup2");
+        exit(ERR_DUP2);
+    }
+}
+
+/**
+ * Close oldfd if different to newfd
+ */
+void closeIfDif(int oldfd, int newfd) {
+    if (oldfd != newfd && close(oldfd) < 0) {
+        perror("close");
+        exit(ERR_CLOSE);
+    }
+}
+
+/**
+ * Dup2 new over old file descriptor if different, close the old file after
+ * if it's different
+ */
+void dupefd(int oldfd, int newfd) {
+    dupeIfDif(oldfd, newfd);
+    closeIfDif(oldfd, newfd);
+}
+
+/**
+ * Turn a command structure into running processes
+ */
+void fork_command(struct Command *cmd) {
+    struct Process *proc = cmd->procHead;
+
+    /* Fork the processes */
+    while (TRUE) {
+
+        /* Process is now running */
+        proc->running = PROC_RUNNING;
+
+        /* fork and run the command on path */
+       if ((proc->pid = fork()) < 0) {
+           fprintf(stdout, "fork error");
+       } else if (proc->pid == 0) {
+           /* child */
+
+           /* Check if necessary to do input redirection*/
+           if (proc->filein != NULL
+                   && (proc->fdin = open(proc->filein, O_RDONLY)) < 0) {
+               perror("read open failed");
+               exit(ERR_OPEN);
+           }
+
+           /* Check if necessary to do output redirection*/
+           if (proc->fileout != NULL
+                   && (proc->fdout = open(proc->fileout,
+                           O_CREAT|O_WRONLY|O_TRUNC, 0777)) < 0) {
+               perror("write open failed");
+               exit(ERR_OPEN);
+           }
+
+           /* dupe and close old file if different to standard */
+           dupefd(proc->fdin, STDIN_FILENO);
+           dupefd(proc->fdout, STDOUT_FILENO);
+
+           /* exec, print error if failed */
+           execvp(proc->argsv[0], proc->argsv);
+           fprintf(stdout, "couldn't execute: %s \r\n", proc->argsv[0]);
+           exit (ERR_CHILD);
+       } else {
+           /* parent */
+
+           /* Set the group pid */
+           if (!cmd->group) {
+               setpgid(proc->pid, proc->pid);
+               cmd->group = proc->pid;
+           } else {
+               setpgid(proc->pid, cmd->group);
+           }
+
+           /* print the pid for background tasks */
+           if (cmd->type == BG) {
+               printf("%d\r\n", proc->pid);
+           }
+
+           /* close created pipes */
+           closeIfDif(proc->fdin, STDIN_FILENO);
+           closeIfDif(proc->fdout, STDOUT_FILENO);
+       }
+
+       /* Move to the next process in the queue */
+       if (proc->next == NULL) {
+           break;
+       } else {
+           proc = proc->next;
+       }
+    }
+}
 

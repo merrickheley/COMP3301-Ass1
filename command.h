@@ -33,6 +33,9 @@
 #define PROC_RUNNING    1
 #define PROC_REAPED     2
 
+#define BG              0
+#define FG              1
+
 /***************************************************************************
  *
  * Public Structures
@@ -62,6 +65,7 @@ struct Command {
     struct Command *next;       /* Next command */
     int runningProcs;           /* Number of processes in command */
     pid_t group;                /* pid group for command */
+    int type;                   /* Type of command, either fg or bg */
 };
 
 /***************************************************************************
@@ -93,6 +97,16 @@ void free_command(struct Command *head, struct Command *cmd);
 /**
  * Reap any commands that have completed
  */
-void reapCommand(struct Command **head);
+void reap_command(struct Command **head);
+
+/**
+ * Fork a command into processes
+ */
+void fork_command(struct Command *cmd);
+
+/* used for dup2'ing a file cleanly */
+void dupeIfDif(int oldfd, int newfd);
+void closeIfDif(int oldfd, int newfd);
+void dupefd(int oldfd, int newfd);
 
 #endif /* COMMAND_H_ */
