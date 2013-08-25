@@ -18,7 +18,7 @@ o use of | (an unnamed pipe)
 .br
 o foreground processes 
 .br
-o background processes 
+o background processes (print pid on start, pid and exit status on end)
 .br
 o comments (lines beginning with the # character). 
 .br
@@ -107,24 +107,97 @@ rare occurence and no effort has been made to handle it.
 Memory is not entirely freed before the forked process is exec'd over. 
 The main process has no memory leaks.
 .SH EXAMPLE
-./qshell <<___EOF___
+\&./qshell <<___EOF___
+.br 
 echo No Arguments Command Test
+.br 
 echo ps
+.br 
 ps
+.br 
 echo Command with Arguments Test
+.br 
 echo ps -l
+.br 
 ps -l
+.br 
 echo Output Redirection Test
+.br 
 echo  ps -l  outputredirect myFile
+.br 
 ps -l > myFile
+.br 
 echo Input Redirection Test
+.br 
 echo wc inputredirect myFile
+.br 
 wc < myFile
+.br 
 echo Comment Test
+.br 
 # Does qshell treat this as a comment?
+.br 
 echo Blank Line Test
 
+.br 
+#Test Pipes
+.br
+echo ls PIPE wc
+.br 
+ls | wc
+.br
+# Pipes plus redirection
+.br
+echo sort FROM myFile PIPE wc TO myFile2
+.br
+sort < myFile | wc  > myFile2
+.br
+cat myFile2
+.br
+# background
+.br
+echo ls -R /usr TO test 2 BG
+.br
+ls -R /usr > test2 &
+.br
+echo sleep 10
+.br
+sleep 10
+.br
+echo wc test2
+.br
+wc test2
+.br
+echo auto input file redirection for background tasks
+.br
+echo wc BG
+.br
+wc &
+.br
+#cd command
+.br
+echo mkdir testdir
+.br
+mkdir testdir
+.br
+echo ls -l TO testdir/testdirfile
+.br
+ls -l > testdir/testdirfile
+.br
+echo cd testdir
+.br
+cd testdir
+.br
+echo ls -l
+.br
+ls -l
+.br
+echo cd ..
+.br
+cd ..
+
 exit
+.br 
 ___EOF___
 
 .SH AUTHOR

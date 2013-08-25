@@ -45,9 +45,6 @@
 #define READ_END        0
 #define WRITE_END       1
 
-#define BG              0
-#define FG              1
-
 /* Must be globals for signal handler */
 /* Global command struct */
 struct Command *globalCmd[2];
@@ -161,35 +158,6 @@ char **split_string(char *buf) {
 }
 
 /**
- * Duplicate oldfd over newfd if different
- */
-void dupeIfDif(int oldfd, int newfd) {
-    if (oldfd != newfd && dup2(oldfd, newfd) < 0) {
-        perror("dup2");
-        exit(ERR_DUP2);
-    }
-}
-
-/**
- * Close oldfd if different to newfd
- */
-void closeIfDif(int oldfd, int newfd) {
-    if (oldfd != newfd && close(oldfd) < 0) {
-        perror("close");
-        exit(ERR_CLOSE);
-    }
-}
-
-/**
- * Dup2 new over old file descriptor if different, close the old file after
- * if it's different
- */
-void dupefd(int oldfd, int newfd) {
-    dupeIfDif(oldfd, newfd);
-    closeIfDif(oldfd, newfd);
-}
-
-/**
  * Set background task with the given PID to stopped
  */
 int stopBgProc(pid_t pid, int status) {
@@ -219,178 +187,80 @@ int stopBgProc(pid_t pid, int status) {
 }
 
 /**
- * Process the buffer
- * Return TRUE to exit program
+ * Allocate arguments to different processes
+ * Perform piping if necessary
+ * Mark processes as background or foreground
+ * Return TRUE if error, FALSE if no error
  */
-int process_buf(char **bufargs) {
-    struct Command *cmd;
-    struct Command *prev;
-    struct Process *proc;
-    int i;
-    int j;
-    int argc = 0;
+int allocate_args(int argc, char **bufargs, struct Command *cmd) {
+    struct Process *proc = cmd->procHead;
+    int i = 0;
+    int j = 0;
     int fd[2];
-    int status;
-    pid_t pid;
-    int cmdType = FG;
-    char devnull[] = "/dev/null";
-
-    /*  cd command*/
-    if (strcmp(bufargs[0], "cd") == 0 && bufargs[0][2] == '\0') {
-        set_cwd(bufargs[1]);
-        return FALSE;
-    }
-
-    /* exit command */
-    if (strcmp(bufargs[0], "exit") == 0 && bufargs[0][4] == '\0') {
-        return TRUE;
-    }
-
-    /* Get argc */
-    while (bufargs[argc++] != ARR_END);
-
-    /* Set up command and first process */
-    cmd = init_command();
-    proc = init_process(argc * sizeof(char *));
-    cmd->runningProcs++;
-
-    /* Set the head of the current cmd to the process */
-    cmd->procHead = proc;
+    static char devnull[] = "/dev/null";
 
     /* Split bufargs into process args */
-    i = 0;
-    j = 0;
-    while (bufargs[i] != ARR_END) {
+   while (bufargs[i] != ARR_END) {
 
-        if (bufargs[i][0] == '|' && bufargs[i][1] == '\0') {
-            /* pipe between processes */
+       if (bufargs[i][0] == '|' && bufargs[i][1] == '\0') {
+           /* pipe between processes */
+           proc->argsv[j] = ARR_END;
+           proc->next = init_process(argc * sizeof(char *));
 
-            proc->argsv[j+1] = ARR_END;
-            proc->next = init_process(argc * sizeof(char *));
-
-            if (pipe(fd) < 0) {
-                perror("pipe failed");
-                exit(ERR_PIPE);
-            }
-
-            /* Update process and cmd */
-            proc->fdout = fd[WRITE_END];
-            proc->next->fdin = fd[READ_END];
-
-            proc = proc->next;
-            cmd->runningProcs++;
-            j = 0;
-
-        } else if (bufargs[i][0] == '<' && bufargs[i][1] == '\0') {
-            /* Set file for input redirection */
-            i++;
-            proc->filein = bufargs[i];
-        } else if (bufargs[i][0] == '>' && bufargs[i][1] == '\0') {
-            /* Set file for input redirection */
-            i++;
-            proc->fileout = bufargs[i];
-        } else if (bufargs[i][0] == '&' && bufargs[i][1] == '\0') {
-            /* Set command for backgrounding */
-            if (bufargs[i+1] == ARR_END) {
-                cmdType = BG;
-                if (cmd->procHead->filein == NULL) {
-                    cmd->procHead->filein = devnull;
-                }
-            }
-        } else {
-            /* copy buffer across to process */
-            proc->argsv[j] = bufargs[i];
-            printf("proc/arg %s %s\r\n", proc->argsv[0], proc->argsv[j]);
-
-            j++;
-        }
-
-        i++;
-    }
-    proc->argsv[j] = ARR_END;
-
-    /* Add the command to the global commands */
-    if (globalCmd[cmdType] == NULL) {
-        globalCmd[cmdType] = cmd;
-    } else {
-        prev = globalCmd[cmdType];
-        while (prev->next != NULL) prev = prev->next;
-        prev->next = cmd;
-    }
-
-    /* reset proc back to start */
-    proc = cmd->procHead;
-
-    /* Fork the processes */
-    while (TRUE) {
-
-        /* Process is now running */
-        proc->running = PROC_RUNNING;
-
-        /* fork and run the command on path */
-       if ((proc->pid = fork()) < 0) {
-           fprintf(stdout, "fork error");
-       } else if (proc->pid == 0) {
-           /* child */
-
-           /* Check if necessary to do input redirection*/
-           if (proc->filein != NULL
-                   && (proc->fdin = open(proc->filein, O_RDONLY)) < 0) {
-               perror("read open failed");
-               exit(ERR_OPEN);
+           if (pipe(fd) < 0) {
+               perror("pipe failed");
+               exit(ERR_PIPE);
            }
 
-           /* Check if necessary to do output redirection*/
-           if (proc->fileout != NULL
-                   && (proc->fdout = open(proc->fileout,
-                           O_CREAT|O_WRONLY|O_TRUNC, 0777)) < 0) {
-               perror("write open failed");
-               exit(ERR_OPEN);
-           }
+           /* Update process and cmd */
+           proc->fdout = fd[WRITE_END];
+           proc->next->fdin = fd[READ_END];
 
-           /* dupe and close old file if different to standard */
-           dupefd(proc->fdin, STDIN_FILENO);
-           dupefd(proc->fdout, STDOUT_FILENO);
-
-           /* exec, print error if failed */
-           execvp(proc->argsv[0], proc->argsv);
-           fprintf(stdout, "couldn't execute: %s \r\n", proc->argsv[0]);
-           exit (ERR_CHILD);
-       } else {
-           /* parent */
-
-           /* Set the group pid */
-           if (!cmd->group) {
-               setpgid(proc->pid, proc->pid);
-               cmd->group = proc->pid;
-           } else {
-               setpgid(proc->pid, cmd->group);
-           }
-
-           /* print the pid for background tasks */
-           if (cmdType == BG) {
-               printf("%d\r\n", proc->pid);
-           }
-
-           /* close created pipes */
-           closeIfDif(proc->fdin, STDIN_FILENO);
-           closeIfDif(proc->fdout, STDOUT_FILENO);
-       }
-
-       /* Move to the next process in the queue */
-       if (proc->next == NULL) {
-           break;
-       } else {
            proc = proc->next;
+           cmd->runningProcs++;
+           j = 0;
+
+       } else if (bufargs[i][0] == '<' && bufargs[i][1] == '\0') {
+           /* Set file for input redirection */
+           i++;
+           proc->filein = bufargs[i];
+       } else if (bufargs[i][0] == '>' && bufargs[i][1] == '\0') {
+           /* Set file for input redirection */
+           i++;
+           proc->fileout = bufargs[i];
+       } else if (bufargs[i][0] == '&' && bufargs[i][1] == '\0') {
+           /* Set command for backgrounding */
+           if (bufargs[i+1] == ARR_END) {
+               cmd->type = BG;
+               if (cmd->procHead->filein == NULL) {
+                   cmd->procHead->filein = devnull;
+               }
+           } else {
+               printf("invalid background command\r\n");
+               return TRUE;
+           }
+       } else {
+           /* copy buffer across to process */
+           proc->argsv[j] = bufargs[i];
+           proc->argsv[++j] = ARR_END;
        }
-    }
 
-    /* If background command, then don't wait on processes */
-    if (cmdType == BG) {
-        return FALSE;
-    }
+       i++;
+   }
+   proc->argsv[j] = ARR_END;
 
-    /* Wait on running processes */
+   return FALSE;
+}
+
+/**
+ * Wait on runnings tasks in the command. If a child is return that's a
+ * background task, mark it as reaped.
+ */
+void wait_running(struct Command *cmd) {
+    struct Process *proc;
+    int status;
+    pid_t pid;
+
     while (cmd->runningProcs > 0) {
         /* parent, wait on children */
         if ((pid = waitpid(-1, &status, 0)) < 0) {
@@ -415,15 +285,78 @@ int process_buf(char **bufargs) {
             exit(ERR_CHILD_NOT_FOUND);
         }
     }
+}
 
-    /* set the foreground command to null and clean it */
-    globalCmd[FG] = NULL;
-    free_command(NULL, cmd);
+/**
+ * Add to the global command list
+ */
+void add_global(struct Command *cmd) {
+    struct Command *prev;
+
+    if (globalCmd[cmd->type] == NULL) {
+        globalCmd[cmd->type] = cmd;
+    } else {
+        prev = globalCmd[cmd->type];
+        while (prev->next != NULL) prev = prev->next;
+        prev->next = cmd;
+    }
+}
+
+/**
+ * Process the buffer
+ * Return TRUE to exit program
+ */
+int process_buf(char **bufargs) {
+    struct Command *cmd;
+    int argc = 0;
+
+    /*  cd command*/
+    if (!strcmp(bufargs[0], "cd") && bufargs[0][2] == '\0') {
+        set_cwd(bufargs[1]);
+        return FALSE;
+    }
+
+    /* exit command */
+    if (!strcmp(bufargs[0], "exit") && bufargs[0][4] == '\0') {
+        return TRUE;
+    }
+
+    /* Get argc */
+    while (bufargs[argc++] != ARR_END);
+
+    /* Set up command and first process */
+    cmd = init_command();
+    cmd->procHead = init_process(argc * sizeof(char *));
+    cmd->runningProcs++;
+
+    /* Allocate arguments to their processes within the command */
+    if (allocate_args(argc, bufargs, cmd) == TRUE) {
+        /* Invalid command */
+        free_command(NULL, cmd);
+        return FALSE;
+    }
+
+    /* Add the command to the global commands */
+    add_global(cmd);
+
+    /* For each process in the command, fork it and set it up as running */
+    fork_command(cmd);
+
+    /* If foreground command, then wait on processes */
+    if (cmd->type == FG) {
+        wait_running(cmd);
+
+        /* set the foreground command to null and clean it */
+        globalCmd[FG] = NULL;
+        free_command(NULL, cmd);
+    }
 
     return FALSE;
 }
 
-/* handler for SIGINT */
+/**
+ *  handler for SIGINT
+ */
 void sigint_recieved(int s) {
     struct Process *proc;
 
@@ -440,33 +373,17 @@ void sigint_recieved(int s) {
             proc = proc->next;
         }
     } else {
-        reapCommand(&globalCmd[BG]);
+        reap_command(&globalCmd[BG]);
         print_prompt();
     }
 }
 
 /**
- * main execution loop
+ * Handle a script argument to qshell
  */
-int main(int argc, char **argv) {
-    char *buf = NULL;               /* Input buffer */
-    int lineLen;                    /* Length of buffer */
-    char **bufargs;                 /* malloc, may cause segfaults */
-    struct sigaction sa;
-    int quit = FALSE;
+void handle_args(int argc, char **argv) {
     int inputFd = 0;
 
-    /* set up fg and bg cmds */
-    globalCmd[FG] = NULL;
-    globalCmd[BG] = NULL;
-
-    /* Handle SIGINT signals */
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = sigint_recieved;
-    sa.sa_flags = (int) 0x10000000;    /* SA_RESTART, not available in ANSI */
-    sigaction(SIGINT, &sa, 0);
-
-    /* Handle script argument */
     inputFile = FALSE;
     if (argc > 1) {
         /* Check if necessary to do output redirection*/
@@ -479,11 +396,35 @@ int main(int argc, char **argv) {
         dupefd(inputFd, STDIN_FILENO);
         inputFile = TRUE;
     }
+}
 
-    while (TRUE) {
+/**
+ * main execution loop
+ */
+int main(int argc, char **argv) {
+    char *buf = NULL;               /* Input buffer */
+    int lineLen;                    /* Length of buffer */
+    char **bufargs;                 /* malloc, may cause segfaults */
+    struct sigaction sa;
+    int quit = FALSE;
+
+    /* set up fg and bg cmds */
+    globalCmd[FG] = NULL;
+    globalCmd[BG] = NULL;
+
+    /* Handle SIGINT signals */
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = sigint_recieved;
+    sa.sa_flags = (int) 0x10000000;    /* SA_RESTART, not available in ANSI */
+    sigaction(SIGINT, &sa, 0);
+
+    /* Handle script argument */
+    handle_args(argc, argv);
+
+    while (!quit) {
 
         /* print prompt */
-        reapCommand(&globalCmd[BG]);
+        reap_command(&globalCmd[BG]);
         print_prompt();
 
         /* get line */
@@ -501,7 +442,7 @@ int main(int argc, char **argv) {
             break;
         }
 
-        /* if more than one char is read and it's not a comment */
+        /* if nothing as read or it's a comment, do nothing */
         if (lineLen == 1 || buf[0] == '#') {
             free(buf);
             continue;
@@ -513,15 +454,9 @@ int main(int argc, char **argv) {
         /* Process the args */
         quit = process_buf(bufargs);
 
-        /* free bufargs */
+        /* free memory */
         free(bufargs);
-
-        /* free buffer */
         free(buf);
-
-        if (quit) {
-            break;
-        }
     }
 
     return (ERR_EOF);
